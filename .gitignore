@@ -156,6 +156,10 @@ models/*.ckpt*
 !models/.gitkeep
 !models/README.md
 
+# Model backups
+model_backups/
+backups/
+
 # Training logs and outputs
 logs/*.log
 logs/*.jsonl
