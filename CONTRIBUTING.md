@@ -1,326 +1,287 @@
-# 🤝 Contributing to AI Escape Cage
+# Contributing to AI Escape Cage Training System
 
-Thank you for your interest in contributing! This project welcomes contributions from developers of all skill levels.
+We welcome contributions from developers, researchers, and AI enthusiasts! This guide will help you get started with contributing to the project.
 
----
+## Ways to Contribute
 
-## 🎯 **Ways to Contribute**
+### **Game Development**
+- Unity scene improvements and visual enhancements
+- New environment layouts and puzzle mechanics
+- Performance optimizations and graphics improvements
+- Mobile platform support and cross-platform compatibility
 
-### **🎮 Game Development**
-- **New Environments**: Create different puzzle scenarios
-- **Visual Improvements**: Better graphics, animations, particle effects
-- **UI/UX**: Training progress visualization, controls interface
-- **Audio**: Sound effects, background music, audio feedback
+### **AI/ML Enhancements**
+- New reinforcement learning algorithms (A2C, SAC, TD3)
+- Hyperparameter optimization and training improvements
+- Curriculum learning and progressive difficulty systems
+- Multi-agent environments and cooperative learning
 
-### **🧠 AI/ML Enhancements**
-- **Algorithm Comparison**: Implement A3C, DQN, SAC algorithms
-- **Hyperparameter Tuning**: Optimize learning rates, network architectures
-- **Advanced Features**: Curriculum learning, transfer learning
-- **Performance**: Faster training, better sample efficiency
+### **Technical Improvements**
+- Code optimization and performance enhancements
+- Bug fixes and error handling improvements
+- Documentation updates and API improvements
+- Testing framework expansions and validation tools
+- Cross-platform compatibility and deployment options
 
-### **🔧 Technical Improvements**
-- **Code Quality**: Refactoring, documentation, type hints
-- **Testing**: Unit tests, integration tests, performance benchmarks
-- **Platform Support**: Cross-platform compatibility improvements
-- **Monitoring**: Training metrics, visualization tools
+### **Research & Analysis**
+- Performance benchmarking and comparative studies
+- Behavioral analysis and interpretability research
+- Transfer learning experiments and domain adaptation
+- Publication-quality documentation and research papers
 
-### **📚 Documentation & Education**
-- **Tutorials**: Step-by-step guides for specific features
-- **Examples**: Different environment configurations
-- **Research**: Analysis of learning behaviors, strategy emergence
-- **Outreach**: Blog posts, videos, educational materials
+## Getting Started
 
----
-
-## 🚀 **Getting Started**
-
-### **1. Development Setup**
+### **1. Fork and Clone**
 ```bash
-# Fork and clone the repository
-git clone https://github.com/YOUR_USERNAME/escape-cage-ai.git
+# Fork the repository on GitHub
+# Then clone your fork
+git clone https://github.com/yourusername/escape-cage-ai.git
 cd escape-cage-ai
 
+# Add upstream remote
+git remote add upstream https://github.com/original/escape-cage-ai.git
+```
+
+### **2. Development Setup**
+```bash
 # Create development environment
 python -m venv escape_cage_dev
-source escape_cage_dev/bin/activate
+source escape_cage_dev/bin/activate  # On Windows: escape_cage_dev\Scripts\activate
 
 # Install in development mode
 pip install -e .
 pip install -r requirements-dev.txt
 
-# Install pre-commit hooks
-pre-commit install
+# Run tests to verify setup
+python run_comprehensive_tests.py
 ```
 
-### **2. Project Structure**
-```
-escape-cage-ai/
-├── communication/          # Unity-Python bridge
-├── ml_training/            # AI training scripts
-├── unity_project/          # Unity game files (if included)
-├── tests/                  # Test suite
-├── docs/                   # Documentation
-├── examples/               # Example configurations
-└── scripts/                # Utility scripts
-```
-
-### **3. Development Workflow**
+### **3. Create Feature Branch**
 ```bash
-# Create a feature branch
+# Create and switch to feature branch
 git checkout -b feature/your-feature-name
 
-# Make your changes
-# Write tests for new functionality
-python -m pytest tests/
-
-# Run code quality checks
-black .
-flake8 .
-mypy .
-
-# Commit and push
-git add .
-git commit -m "feat: your descriptive commit message"
-git push origin feature/your-feature-name
+# Keep branch updated with upstream
+git fetch upstream
+git rebase upstream/main
 ```
 
----
-
-## 🎨 **Contribution Ideas by Skill Level**
-
-### **🌱 Beginner Friendly**
-- **Add new object types** (switches, moving platforms)
-- **Improve error messages** and user feedback
-- **Create example configurations** for different scenarios
-- **Write documentation** for existing features
-- **Add unit tests** for utility functions
-
-### **🌿 Intermediate**
-- **Implement different RL algorithms** (DQN, A3C)
-- **Create training visualization** dashboards
-- **Add multi-agent support** for competitive/cooperative learning
-- **Improve communication protocol** efficiency
-- **Build automated testing** pipelines
-
-### **🌳 Advanced**
-- **Research novel RL techniques** for puzzle-solving
-- **Implement curriculum learning** frameworks
-- **Create sim-to-real transfer** capabilities
-- **Develop hierarchical RL** approaches
-- **Build distributed training** systems
-
----
-
-## 📋 **Code Standards**
+## Code Standards
 
 ### **Python Code Style**
+- **PEP 8**: Follow Python style guidelines strictly
+- **Type Hints**: Use type annotations for all functions
+- **Docstrings**: Google-style docstrings for all public functions
+- **Import Organization**: Standard library, third-party, local imports
+- **Line Length**: Maximum 88 characters (Black formatter default)
+
+### **Example Code Structure**
 ```python
-# Use type hints
-def calculate_reward(observation: Dict[str, Any]) -> float:
-    """Calculate reward based on current observation.
+"""Module docstring describing purpose and usage."""
+
+import os
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+import tensorflow as tf
+from stable_baselines3 import PPO
+
+from ml_training.base_environment import BaseEscapeCageEnv
+
+
+class NewFeature:
+    """Class for implementing new functionality.
     
     Args:
-        observation: Current game state dictionary
+        param1: Description of parameter
+        param2: Description of parameter
         
-    Returns:
-        Calculated reward value
+    Attributes:
+        attribute1: Description of attribute
     """
-    pass
-
-# Use descriptive variable names
-player_position = observation.get('player_position', (0, 0))
-has_collected_key = observation.get('has_key', False)
-
-# Follow PEP 8 conventions
-MAX_TRAINING_EPISODES = 50000
-DEFAULT_LEARNING_RATE = 0.0003
+    
+    def __init__(self, param1: str, param2: int = 10):
+        """Initialize new feature with parameters."""
+        self.param1 = param1
+        self.param2 = param2
+    
+    def process_data(self, data: List[float]) -> Dict[str, float]:
+        """Process input data and return results.
+        
+        Args:
+            data: List of float values to process
+            
+        Returns:
+            Dictionary containing processed results
+            
+        Raises:
+            ValueError: If data is empty or invalid
+        """
+        if not data:
+            raise ValueError("Data cannot be empty")
+        
+        return {"mean": np.mean(data), "std": np.std(data)}
 ```
 
-### **Unity C# Style**
-```csharp
-// Use PascalCase for public members
-public class GameController : MonoBehaviour
-{
-    public GameObject Player;
-    public float MovementSpeed = 3.0f;
-    
-    // Use camelCase for private members
-    private bool hasKey = false;
-    private Vector3 initialPosition;
-    
-    // Clear method documentation
-    /// <summary>
-    /// Processes an action received from the AI agent
-    /// </summary>
-    /// <param name="action">Action number (0-3)</param>
-    private void ProcessAction(int action)
-    {
-        // Implementation here
-    }
-}
-```
+### **Unity C# Standards**
+- **Unity Naming Conventions**: PascalCase for public, camelCase for private
+- **Component Organization**: Single responsibility per script
+- **Performance**: Object pooling for frequently created/destroyed objects
+- **Documentation**: XML documentation comments for public methods
 
-### **Documentation Standards**
-- **Clear docstrings** for all public functions
-- **Type hints** for function parameters and return values
-- **Inline comments** for complex logic
-- **README updates** for new features
-- **Example usage** in docstrings
+## Testing Guidelines
 
----
-
-## 🧪 **Testing Guidelines**
+### **Required Tests**
+- **Unit Tests**: Test individual functions and classes
+- **Integration Tests**: Test component interactions
+- **Performance Tests**: Verify training speed and memory usage
+- **Communication Tests**: Test Unity-Python bridge reliability
 
 ### **Test Structure**
 ```python
-# tests/test_environment.py
-import pytest
-from escape_cage.environment import EscapeCageEnv
+import unittest
+from unittest.mock import Mock, patch
+from pathlib import Path
 
-class TestEscapeCageEnvironment:
-    """Test suite for the escape cage environment."""
+class TestNewFeature(unittest.TestCase):
+    """Test cases for NewFeature class."""
     
-    def setup_method(self):
-        """Setup test fixtures."""
-        self.env = EscapeCageEnv()
+    def setUp(self):
+        """Set up test fixtures before each test method."""
+        self.feature = NewFeature("test", 20)
+        self.test_data = [1.0, 2.0, 3.0, 4.0, 5.0]
     
-    def test_observation_space(self):
-        """Test observation space dimensions."""
-        obs = self.env.reset()
-        assert obs.shape == (7,)
-        assert all(-10 <= x <= 10 for x in obs)
+    def test_process_data_valid_input(self):
+        """Test process_data with valid input."""
+        result = self.feature.process_data(self.test_data)
+        
+        self.assertIn("mean", result)
+        self.assertIn("std", result)
+        self.assertAlmostEqual(result["mean"], 3.0, places=2)
     
-    def test_action_execution(self):
-        """Test action execution."""
-        self.env.reset()
-        obs, reward, done, _, info = self.env.step(0)  # Move up
-        assert isinstance(reward, float)
-        assert isinstance(done, bool)
+    def test_process_data_empty_input(self):
+        """Test process_data raises ValueError for empty input."""
+        with self.assertRaises(ValueError):
+            self.feature.process_data([])
+    
+    @patch('numpy.mean')
+    def test_process_data_with_mock(self, mock_mean):
+        """Test process_data with mocked dependencies."""
+        mock_mean.return_value = 10.0
+        
+        result = self.feature.process_data(self.test_data)
+        
+        mock_mean.assert_called_once_with(self.test_data)
+        self.assertEqual(result["mean"], 10.0)
+
+if __name__ == '__main__':
+    unittest.main()
 ```
 
-### **Test Categories**
-- **Unit Tests**: Individual functions and classes
-- **Integration Tests**: Component interactions
-- **Performance Tests**: Training speed and efficiency
-- **Regression Tests**: Ensure changes don't break existing functionality
-
----
-
-## 📝 **Commit Message Format**
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
-```
-
-### **Examples**
+### **Running Tests**
 ```bash
-feat(ai): add DQN algorithm implementation
-fix(unity): resolve player boundary collision issue
-docs(readme): update installation instructions
-test(env): add unit tests for reward calculation
-refactor(bridge): simplify communication protocol
+# Run all tests
+python run_comprehensive_tests.py
+
+# Run specific test module
+python -m unittest tests.test_new_feature
+
+# Run with coverage
+python run_comprehensive_tests.py --coverage
+
+# Run performance benchmarks
+python -m pytest tests/ --benchmark-only
 ```
 
-### **Types**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `test`: Adding or updating tests
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `chore`: Maintenance tasks
+## Submission Process
 
----
+### **1. Development Workflow**
+```bash
+# Make your changes
+git add .
+git commit -m "Add new feature: brief description
 
-## 🔍 **Code Review Process**
+Detailed description of changes made, including:
+- What was added/modified/fixed
+- Why the change was necessary  
+- Any breaking changes or migration notes"
 
-### **Before Submitting PR**
-- [ ] All tests pass (`python -m pytest`)
-- [ ] Code follows style guidelines (`black .` and `flake8 .`)
-- [ ] Type checking passes (`mypy .`)
-- [ ] Documentation updated if needed
-- [ ] Commit messages follow convention
-
-### **PR Template**
-```markdown
-## Description
-Brief description of changes made.
-
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Documentation update
-- [ ] Performance improvement
-
-## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests pass
-- [ ] Manual testing performed
-
-## Screenshots (if applicable)
-Include screenshots for UI changes.
-
-## Additional Notes
-Any additional context or considerations.
+# Push to your fork
+git push origin feature/your-feature-name
 ```
 
----
+### **2. Pull Request Guidelines**
+- **Clear Title**: Descriptive title summarizing the change
+- **Detailed Description**: Explain what, why, and how
+- **Tests**: Include tests for new functionality
+- **Documentation**: Update relevant documentation
+- **Backwards Compatibility**: Note any breaking changes
 
-## 🌟 **Recognition**
+### **3. Code Review Process**
+- **Automated Checks**: CI/CD pipeline runs tests and linting
+- **Peer Review**: At least one maintainer reviews the code
+- **Feedback Integration**: Address review comments promptly
+- **Final Approval**: Maintainer approves and merges
+
+## Areas Needing Contribution
+
+### **High Priority**
+- Performance optimization for training loops
+- Cross-platform Unity build support
+- Enhanced error handling in communication layer
+- Documentation improvements and examples
+
+### **Medium Priority**
+- Additional RL algorithm implementations
+- Visualization tools for training analysis
+- Model comparison and benchmarking utilities
+- Advanced environment configurations
+
+### **Research Opportunities**
+- Curriculum learning implementations
+- Multi-agent environment support
+- Transfer learning between environments
+- Behavioral analysis and interpretability tools
+
+## Getting Help
+
+### **Communication Channels**
+- **GitHub Issues**: Bug reports and feature requests
+- **GitHub Discussions**: General questions and ideas
+- **Pull Request Comments**: Code-specific discussions
+
+### **Documentation Resources**
+- **README.md**: Project overview and quick start
+- **TECHNICAL.md**: Detailed technical documentation
+- **API Documentation**: Generated from code docstrings
+
+### **Development Environment Help**
+- **setup_dev_environment.py**: Automated development setup
+- **troubleshooting.md**: Common issues and solutions
+- **example_contributions/**: Sample contributions for reference
+
+## Recognition
 
 ### **Contributors**
-All contributors will be recognized in:
-- **README.md** contributors section
-- **Release notes** for significant contributions
-- **Social media** shoutouts for major features
+- All contributors are recognized in CONTRIBUTORS.md
+- Significant contributions receive special acknowledgment
+- Academic contributors can be listed on research papers
 
-### **Contribution Types**
-We value all types of contributions:
-- **Code**: Features, bug fixes, optimizations
-- **Documentation**: Tutorials, examples, improvements
-- **Testing**: Writing tests, reporting bugs
-- **Design**: UI/UX improvements, graphics
-- **Community**: Helping others, discussions, feedback
+### **Types of Recognition**
+- **Code Contributors**: Listed with GitHub profile links
+- **Research Contributors**: Academic affiliation and ORCID
+- **Documentation Contributors**: Technical writing acknowledgment
+- **Bug Reporters**: Recognition for valuable issue reports
 
----
-
-## 🆘 **Getting Help**
-
-### **Development Questions**
-- **GitHub Discussions**: [Ask questions](https://github.com/yourusername/escape-cage-ai/discussions)
-- **Discord/Slack**: Join our development community
-- **Issues**: [Report bugs or request features](https://github.com/yourusername/escape-cage-ai/issues)
-
-### **Learning Resources**
-- **Reinforcement Learning**: [Spinning Up in Deep RL](https://spinningup.openai.com/)
-- **Unity Development**: [Unity Learn](https://learn.unity.com/)
-- **Python Best Practices**: [Real Python](https://realpython.com/)
-- **Git Workflow**: [Atlassian Git Tutorials](https://www.atlassian.com/git/tutorials)
+**Happy coding!**
 
 ---
 
-## 📄 **License**
+**Questions? Need help getting started?**
+- Create an issue for bugs or feature requests
+- Start a discussion for questions or ideas
+- Check existing documentation for common solutions
 
-By contributing, you agree that your contributions will be licensed under the same MIT License that covers the project. See [LICENSE](LICENSE) for details.
-
----
-
-## 🙏 **Thank You**
-
-Your contributions help make this project better for everyone! Whether you're fixing a typo, adding a feature, or helping other users, every contribution matters.
-
-**Happy coding! 🚀**
-
----
-
-<div align="center">
-
-[⬅️ Back to Main README](README.md) • [🔧 Setup Guide](SETUP.md) • [🔬 Technical Docs](TECHNICAL.md)
-
-</div> 
+[Back to Main README](README.md) • [Setup Guide](SETUP.md) • [Technical Docs](TECHNICAL.md) 

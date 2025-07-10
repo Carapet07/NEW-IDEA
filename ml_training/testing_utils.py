@@ -1,5 +1,5 @@
 """
-🧪 Testing Utilities Module
+Testing Utilities Module
 Comprehensive utilities for testing, evaluation, and benchmarking AI models.
 
 This module provides:
@@ -9,14 +9,17 @@ This module provides:
 - A/B testing utilities
 - Test report generation
 - Environment testing helpers
+- Interactive CLI for testing trained models
 """
 
 import numpy as np
 import time
 import datetime
+import argparse
+import os
+import json
 from typing import Dict, List, Any, Optional, Tuple, Callable, Union
 from pathlib import Path
-import json
 import csv
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
@@ -89,6 +92,134 @@ class TestResult:
             self.timestamp = datetime.datetime.now().isoformat()
 
 
+class TestingAnalytics:
+    """
+    Class to track and analyze AI testing performance with detailed metrics.
+    Provides comprehensive analytics for model evaluation and comparison.
+    """
+    
+    def __init__(self):
+        self.episodes_data: List[Dict[str, Any]] = []
+        self.start_time = time.time()
+        
+    def record_episode(self, episode_num: int, steps: int, reward: float, 
+                      success: bool, action_history: List[int], 
+                      total_reward: float, terminated: bool, truncated: bool):
+        """
+        Record data from a completed episode.
+        
+        Args:
+            episode_num: Episode number
+            steps: Number of steps taken
+            reward: Final step reward
+            success: Whether the episode was successful
+            action_history: List of actions taken
+            total_reward: Total episode reward
+            terminated: Whether episode terminated naturally
+            truncated: Whether episode was truncated
+        """
+        episode_data = {
+            'episode': episode_num,
+            'steps': steps,
+            'final_reward': reward,
+            'total_reward': total_reward,
+            'success': success,
+            'terminated': terminated,
+            'truncated': truncated,
+            'action_count': len(action_history),
+            'action_distribution': self._analyze_actions(action_history),
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        self.episodes_data.append(episode_data)
+    
+    def _analyze_actions(self, actions: List[int]) -> Dict[str, int]:
+        """Analyze the distribution of actions taken."""
+        action_names = {0: 'up', 1: 'down', 2: 'left', 3: 'right'}
+        action_counts = {name: 0 for name in action_names.values()}
+        
+        for action in actions:
+            if action in action_names:
+                action_counts[action_names[action]] += 1
+        
+        return action_counts
+    
+    def _analyze_success_pattern(self) -> Dict[str, Any]:
+        """Analyze patterns in successful episodes."""
+        successful_episodes = [ep for ep in self.episodes_data if ep['success']]
+        
+        if not successful_episodes:
+            return {'message': 'No successful episodes to analyze'}
+        
+        # Average steps in successful episodes
+        avg_success_steps = np.mean([ep['steps'] for ep in successful_episodes])
+        
+        # Most common action pattern in successful episodes
+        combined_actions = {}
+        for ep in successful_episodes:
+            for action, count in ep['action_distribution'].items():
+                combined_actions[action] = combined_actions.get(action, 0) + count
+        
+        total_actions = sum(combined_actions.values())
+        action_percentages = {
+            action: (count / total_actions) * 100 
+            for action, count in combined_actions.items()
+        }
+        
+        return {
+            'avg_steps': avg_success_steps,
+            'action_strategy': action_percentages,
+            'success_count': len(successful_episodes)
+        }
+    
+    def generate_report(self) -> Dict[str, Any]:
+        """Generate comprehensive test report."""
+        if not self.episodes_data:
+            return {'error': 'No episode data available'}
+        
+        total_episodes = len(self.episodes_data)
+        successes = sum(1 for ep in self.episodes_data if ep['success'])
+        success_rate = (successes / total_episodes) * 100
+        
+        steps_list = [ep['steps'] for ep in self.episodes_data]
+        rewards_list = [ep['total_reward'] for ep in self.episodes_data]
+        
+        # Calculate completion types
+        natural_success = sum(1 for ep in self.episodes_data 
+                            if ep['success'] and ep['terminated'])
+        timeout_failure = sum(1 for ep in self.episodes_data 
+                            if not ep['success'] and ep['truncated'])
+        other_failure = total_episodes - successes - timeout_failure
+        
+        report = {
+            'summary': {
+                'total_episodes': total_episodes,
+                'successes': successes,
+                'success_rate': success_rate,
+                'total_test_time': time.time() - self.start_time
+            },
+            'performance': {
+                'avg_steps': np.mean(steps_list),
+                'min_steps': min(steps_list),
+                'max_steps': max(steps_list),
+                'avg_reward': np.mean(rewards_list),
+                'min_reward': min(rewards_list),
+                'max_reward': max(rewards_list)
+            },
+            'completion_types': {
+                'natural_success': natural_success,
+                'timeout_failure': timeout_failure,
+                'other_failure': other_failure
+            }
+        }
+        
+        # Add success pattern analysis
+        success_analysis = self._analyze_success_pattern()
+        if 'action_strategy' in success_analysis:
+            report['successful_strategy'] = success_analysis['action_strategy']
+        
+        return report
+
+
 class TestRunner:
     """
     Main class for running comprehensive model tests.
@@ -133,33 +264,73 @@ class TestRunner:
         
         for episode in range(self.config.num_episodes):
             try:
-                # Check timeout
-                if self._check_timeout():
-                    self.logger.warning("Test timed out")
-                    break
+                episode_start = time.time()
                 
-                result = self._run_single_episode(model, env, episode + 1)
+                # Reset environment
+                obs, info = env.reset()
+                episode_reward = 0
+                step_count = 0
+                actions_taken = []
+                observations = []
+                
+                # Run episode
+                for step in range(self.config.max_steps_per_episode):
+                    # Get action from model
+                    action, _ = model.predict(obs, deterministic=self.config.deterministic)
+                    
+                    # Store data if requested
+                    if self.config.save_actions:
+                        actions_taken.append(int(action))
+                    if self.config.save_observations:
+                        observations.append(obs.copy())
+                    
+                    # Step environment
+                    obs, reward, terminated, truncated, step_info = env.step(action)
+                    episode_reward += reward
+                    step_count += 1
+                    
+                    # Check for episode end
+                    if terminated or truncated:
+                        break
+                
+                episode_duration = time.time() - episode_start
+                
+                # Create test result
+                result = TestResult(
+                    episode_num=episode + 1,
+                    steps_taken=step_count,
+                    total_reward=episode_reward,
+                    final_reward=reward,
+                    success=step_info.get('success', False),
+                    terminated=terminated,
+                    truncated=truncated,
+                    duration=episode_duration,
+                    actions=actions_taken if self.config.save_actions else None,
+                    observations=observations if self.config.save_observations else None,
+                    info=step_info
+                )
+                
                 self.results.append(result)
                 
                 # Progress callback
                 if progress_callback:
                     progress_callback(episode + 1, self.config.num_episodes, result)
                 
-                # Log progress
-                if (episode + 1) % max(1, self.config.num_episodes // 10) == 0:
-                    self.logger.info(f"Completed episode {episode + 1}/{self.config.num_episodes}")
-                    
+                self.logger.debug(f"Episode {episode + 1}: {step_count} steps, "
+                                f"reward {episode_reward:.2f}, "
+                                f"success: {result.success}")
+                
             except Exception as e:
-                self.logger.error(f"Error in episode {episode + 1}: {e}")
+                self.logger.error(f"Episode {episode + 1} failed: {e}")
                 error_result = TestResult(
                     episode_num=episode + 1,
                     steps_taken=0,
-                    total_reward=0.0,
-                    final_reward=0.0,
+                    total_reward=0,
+                    final_reward=0,
                     success=False,
                     terminated=False,
                     truncated=False,
-                    duration=0.0,
+                    duration=0,
                     error=str(e)
                 )
                 self.results.append(error_result)
@@ -167,143 +338,74 @@ class TestRunner:
         self.end_time = datetime.datetime.now()
         
         # Generate summary
-        summary = self._generate_test_summary()
-        success_rate = summary.get('success_metrics', {}).get('success_rate', 0)
-        self.logger.info(f"Test completed. Success rate: {success_rate:.1f}%")
-        
-        return {
-            'config': asdict(self.config),
-            'summary': summary,
-            'results': [asdict(result) for result in self.results]
-        }
+        return self._generate_summary()
     
-    def _run_single_episode(self, model: BaseAlgorithm, env, episode_num: int) -> TestResult:
-        """Run a single test episode."""
-        episode_start = time.time()
-        
-        # Reset environment
-        obs, _ = env.reset()
-        
-        # Initialize tracking
-        actions = [] if self.config.save_actions else None
-        observations = [] if self.config.save_observations else None
-        total_reward = 0.0
-        steps = 0
-        
-        # Run episode
-        while steps < self.config.max_steps_per_episode:
-            # Get action from model
-            action, _states = model.predict(obs, deterministic=self.config.deterministic)
-            
-            # Record data if requested
-            if actions is not None:
-                actions.append(int(action))
-            if observations is not None:
-                observations.append(obs.copy())
-            
-            # Take step
-            obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += reward
-            steps += 1
-            
-            # Check if episode is done
-            if terminated or truncated:
-                break
-        
-        episode_duration = time.time() - episode_start
-        
-        # Create result
-        result = TestResult(
-            episode_num=episode_num,
-            steps_taken=steps,
-            total_reward=total_reward,
-            final_reward=reward,
-            success=info.get('success', False),
-            terminated=terminated,
-            truncated=truncated,
-            duration=episode_duration,
-            actions=actions,
-            observations=observations,
-            info=info
-        )
-        
-        return result
-    
-    def _check_timeout(self) -> bool:
-        """Check if test has timed out."""
-        if self.start_time is None:
-            return False
-        
-        elapsed = (datetime.datetime.now() - self.start_time).total_seconds()
-        return elapsed > self.config.timeout_seconds
-    
-    def _generate_test_summary(self) -> Dict[str, Any]:
-        """Generate comprehensive test summary."""
+    def _generate_summary(self) -> Dict[str, Any]:
+        """Generate test summary from results."""
         if not self.results:
-            return {}
+            return {'error': 'No test results available'}
         
         # Filter out error results for statistics
         valid_results = [r for r in self.results if r.error is None]
-        successful_results = [r for r in valid_results if r.success]
         
+        if not valid_results:
+            return {'error': 'No valid test results'}
+        
+        # Calculate statistics
         total_episodes = len(self.results)
-        valid_episodes = len(valid_results)
-        successful_episodes = len(successful_results)
+        successes = sum(1 for r in valid_results if r.success)
+        success_rate = (successes / len(valid_results)) * 100
         
-        # Calculate basic statistics
-        if valid_results:
-            steps_data = [r.steps_taken for r in valid_results]
-            rewards_data = [r.total_reward for r in valid_results]
-            durations_data = [r.duration for r in valid_results]
-        else:
-            steps_data = rewards_data = durations_data = []
+        avg_steps = np.mean([r.steps_taken for r in valid_results])
+        avg_reward = np.mean([r.total_reward for r in valid_results])
+        avg_duration = np.mean([r.duration for r in valid_results])
         
-        # Calculate success-specific statistics
-        if successful_results:
-            success_steps = [r.steps_taken for r in successful_results]
-            success_rewards = [r.total_reward for r in successful_results]
-        else:
-            success_steps = success_rewards = []
+        total_duration = (self.end_time - self.start_time).total_seconds()
         
-        summary = {
-            'test_info': {
-                'test_name': self.config.test_name,
-                'total_episodes': total_episodes,
-                'valid_episodes': valid_episodes,
-                'error_episodes': total_episodes - valid_episodes,
-                'test_duration': (self.end_time - self.start_time).total_seconds() if self.end_time else 0
-            },
-            'success_metrics': {
-                'successful_episodes': successful_episodes,
-                'success_rate': (successful_episodes / valid_episodes) * 100 if valid_episodes > 0 else 0,
-                'failure_rate': ((valid_episodes - successful_episodes) / valid_episodes) * 100 if valid_episodes > 0 else 0
-            },
-            'performance_metrics': {
-                'avg_steps': np.mean(steps_data) if steps_data else 0,
-                'min_steps': np.min(steps_data) if steps_data else 0,
-                'max_steps': np.max(steps_data) if steps_data else 0,
-                'std_steps': np.std(steps_data) if steps_data else 0,
-                'avg_reward': np.mean(rewards_data) if rewards_data else 0,
-                'min_reward': np.min(rewards_data) if rewards_data else 0,
-                'max_reward': np.max(rewards_data) if rewards_data else 0,
-                'std_reward': np.std(rewards_data) if rewards_data else 0,
-                'avg_duration': np.mean(durations_data) if durations_data else 0,
-                'total_test_time': sum(durations_data) if durations_data else 0
-            },
-            'success_specific_metrics': {
-                'avg_success_steps': np.mean(success_steps) if success_steps else 0,
-                'min_success_steps': np.min(success_steps) if success_steps else 0,
-                'avg_success_reward': np.mean(success_rewards) if success_rewards else 0
-            },
-            'termination_analysis': {
-                'natural_terminations': sum(1 for r in valid_results if r.terminated),
-                'truncations': sum(1 for r in valid_results if r.truncated),
-                'successful_natural': sum(1 for r in valid_results if r.success and r.terminated),
-                'timeout_failures': sum(1 for r in valid_results if not r.success and r.truncated)
-            }
+        return {
+            'test_name': self.config.test_name,
+            'total_episodes': total_episodes,
+            'valid_episodes': len(valid_results),
+            'errors': total_episodes - len(valid_results),
+            'success_rate': success_rate,
+            'successes': successes,
+            'avg_steps': avg_steps,
+            'avg_reward': avg_reward,
+            'avg_episode_duration': avg_duration,
+            'total_test_duration': total_duration,
+            'start_time': self.start_time.isoformat(),
+            'end_time': self.end_time.isoformat(),
+            'results': [asdict(r) for r in self.results]
         }
+    
+    def run_quick_test(self, model: BaseAlgorithm, env, episodes: int = 5) -> Dict[str, Any]:
+        """
+        Run a quick test with simplified reporting.
         
-        return summary
+        Args:
+            model: Model to test
+            env: Environment to test in
+            episodes: Number of episodes to run
+            
+        Returns:
+            Quick test results
+        """
+        # Update config for quick test
+        original_episodes = self.config.num_episodes
+        self.config.num_episodes = episodes
+        
+        try:
+            results = self.run_model_test(model, env)
+            return {
+                'quick_test': True,
+                'episodes_tested': episodes,
+                'success_rate': results.get('success_rate', 0),
+                'avg_reward': results.get('avg_reward', 0),
+                'avg_steps': results.get('avg_steps', 0)
+            }
+        finally:
+            # Restore original config
+            self.config.num_episodes = original_episodes
 
 
 class ModelBenchmark:
@@ -339,120 +441,94 @@ class ModelBenchmark:
         self.model_results[model_name] = test_results
         self.logger.info(f"Added results for model: {model_name}")
     
-    def run_model_benchmark(self, models: Dict[str, BaseAlgorithm], env,
-                          test_config: TestConfiguration) -> Dict[str, Any]:
+    def run_benchmark(self, models: Dict[str, BaseAlgorithm], env, 
+                     config: TestConfiguration) -> Dict[str, Any]:
         """
-        Run benchmark tests on multiple models.
+        Run benchmark on multiple models.
         
         Args:
             models: Dictionary mapping model names to model instances
             env: Environment to test in
-            test_config: Test configuration
+            config: Test configuration
             
         Returns:
-            Dictionary containing benchmark results
+            Benchmark results
         """
-        self.logger.info(f"Starting benchmark with {len(models)} models")
+        self.logger.info(f"Starting benchmark '{self.benchmark_name}' with {len(models)} models")
         
         for model_name, model in models.items():
             self.logger.info(f"Testing model: {model_name}")
             
             # Create test runner for this model
-            model_config = TestConfiguration(
+            test_config = TestConfiguration(
                 test_name=f"{self.benchmark_name}_{model_name}",
-                num_episodes=test_config.num_episodes,
-                max_steps_per_episode=test_config.max_steps_per_episode,
-                deterministic=test_config.deterministic,
-                render=False,  # Disable rendering for benchmarks
-                save_actions=test_config.save_actions,
-                save_observations=test_config.save_observations
+                num_episodes=config.num_episodes,
+                max_steps_per_episode=config.max_steps_per_episode,
+                deterministic=config.deterministic
             )
             
-            test_runner = TestRunner(model_config)
-            results = test_runner.run_model_test(model, env)
+            runner = TestRunner(test_config)
+            results = runner.run_model_test(model, env)
             self.add_model_results(model_name, results)
         
-        # Generate comparison report
-        comparison = self._generate_comparison_report()
+        return self.generate_benchmark_report()
+    
+    def generate_benchmark_report(self) -> Dict[str, Any]:
+        """Generate comprehensive benchmark report."""
+        if not self.model_results:
+            return {'error': 'No model results available'}
+        
+        # Rank models by success rate
+        model_rankings = []
+        for model_name, results in self.model_results.items():
+            if 'success_rate' in results:
+                model_rankings.append({
+                    'model': model_name,
+                    'success_rate': results['success_rate'],
+                    'avg_reward': results.get('avg_reward', 0),
+                    'avg_steps': results.get('avg_steps', 0)
+                })
+        
+        # Sort by success rate (descending)
+        model_rankings.sort(key=lambda x: x['success_rate'], reverse=True)
+        
+        # Find best performing model
+        best_model = model_rankings[0] if model_rankings else None
         
         return {
             'benchmark_name': self.benchmark_name,
-            'models_tested': list(models.keys()),
-            'test_config': asdict(test_config),
-            'individual_results': self.model_results,
-            'comparison': comparison
+            'models_tested': len(self.model_results),
+            'rankings': model_rankings,
+            'best_model': best_model,
+            'detailed_results': self.model_results,
+            'timestamp': datetime.datetime.now().isoformat()
         }
     
-    def _generate_comparison_report(self) -> Dict[str, Any]:
-        """Generate comprehensive comparison report."""
-        if not self.model_results:
-            return {
-                'rankings': {},
-                'statistical_comparison': {},
-                'recommendations': []
-            }
+    def compare_models(self, model1_name: str, model2_name: str) -> Dict[str, Any]:
+        """
+        Compare two specific models.
+        
+        Args:
+            model1_name: Name of first model
+            model2_name: Name of second model
+            
+        Returns:
+            Comparison results
+        """
+        if model1_name not in self.model_results or model2_name not in self.model_results:
+            return {'error': 'One or both models not found in benchmark results'}
+        
+        results1 = self.model_results[model1_name]
+        results2 = self.model_results[model2_name]
         
         comparison = {
-            'rankings': {},
-            'statistical_comparison': {},
-            'recommendations': []
+            'model1': model1_name,
+            'model2': model2_name,
+            'success_rate_diff': results1.get('success_rate', 0) - results2.get('success_rate', 0),
+            'reward_diff': results1.get('avg_reward', 0) - results2.get('avg_reward', 0),
+            'steps_diff': results1.get('avg_steps', 0) - results2.get('avg_steps', 0),
+            'better_model': model1_name if results1.get('success_rate', 0) > results2.get('success_rate', 0) else model2_name
         }
-        
-        # Extract key metrics for comparison
-        metrics = {}
-        for model_name, results in self.model_results.items():
-            summary = results.get('summary', {})
-            if summary:
-                success_metrics = summary.get('success_metrics', {})
-                performance_metrics = summary.get('performance_metrics', {})
-                success_specific_metrics = summary.get('success_specific_metrics', {})
-                
-                metrics[model_name] = {
-                    'success_rate': success_metrics.get('success_rate', 0),
-                    'avg_steps': performance_metrics.get('avg_steps', 0),
-                    'avg_reward': performance_metrics.get('avg_reward', 0),
-                    'avg_success_steps': success_specific_metrics.get('avg_success_steps', 0)
-                }
-        
-        if not metrics:
-            return comparison
-        
-        # Generate rankings
-        comparison['rankings'] = {
-            'by_success_rate': sorted(metrics.items(), 
-                                    key=lambda x: x[1]['success_rate'], reverse=True),
-            'by_efficiency': sorted(metrics.items(), 
-                                  key=lambda x: x[1]['avg_success_steps']),
-            'by_reward': sorted(metrics.items(), 
-                              key=lambda x: x[1]['avg_reward'], reverse=True)
-        }
-        
-        # Best performers
-        best_success = comparison['rankings']['by_success_rate'][0]
-        best_efficiency = comparison['rankings']['by_efficiency'][0]
-        best_reward = comparison['rankings']['by_reward'][0]
-        
-        comparison['best_performers'] = {
-            'highest_success_rate': best_success[0],
-            'most_efficient': best_efficiency[0],
-            'highest_reward': best_reward[0]
-        }
-        
-        # Generate recommendations
-        if best_success[0] == best_efficiency[0] == best_reward[0]:
-            comparison['recommendations'].append(
-                f"{best_success[0]} is the clear winner across all metrics"
-            )
-        else:
-            comparison['recommendations'].append(
-                f"For success rate: {best_success[0]} ({best_success[1]['success_rate']:.1f}%)"
-            )
-            comparison['recommendations'].append(
-                f"For efficiency: {best_efficiency[0]} ({best_efficiency[1]['avg_success_steps']:.1f} steps)"
-            )
-            comparison['recommendations'].append(
-                f"For reward: {best_reward[0]} ({best_reward[1]['avg_reward']:.2f} avg reward)"
-            )
         
         return comparison
 
@@ -495,7 +571,7 @@ class TestReportGenerator:
     def generate_csv_report(self, test_results: Dict[str, Any], 
                           output_path: str) -> bool:
         """
-        Generate CSV report with episode-level data.
+        Generate CSV report with episode data.
         
         Args:
             test_results: Results from TestRunner
@@ -505,26 +581,20 @@ class TestReportGenerator:
             True if successful, False otherwise
         """
         try:
-            results = test_results.get('results', [])
-            if not results:
+            if 'results' not in test_results:
+                self.logger.error("No episode results found in test data")
                 return False
             
-            # Get fieldnames from first result
-            fieldnames = list(results[0].keys())
-            
             with open(output_path, 'w', newline='') as csvfile:
+                fieldnames = ['episode_num', 'steps_taken', 'total_reward', 
+                            'success', 'terminated', 'truncated', 'duration']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
                 
-                for result in results:
-                    # Convert complex types to strings for CSV
-                    csv_row = {}
-                    for key, value in result.items():
-                        if isinstance(value, (list, dict)):
-                            csv_row[key] = json.dumps(value)
-                        else:
-                            csv_row[key] = value
-                    writer.writerow(csv_row)
+                writer.writeheader()
+                for result in test_results['results']:
+                    # Filter to only include relevant fields
+                    row = {k: v for k, v in result.items() if k in fieldnames}
+                    writer.writerow(row)
             
             self.logger.info(f"CSV report saved to {output_path}")
             return True
@@ -534,175 +604,543 @@ class TestReportGenerator:
     
     def generate_text_summary(self, test_results: Dict[str, Any]) -> str:
         """
-        Generate a human-readable text summary.
+        Generate human-readable text summary.
         
         Args:
             test_results: Results from TestRunner or ModelBenchmark
             
         Returns:
-            Text summary string
+            Formatted text summary
         """
-        lines = []
-        lines.append("=" * 60)
-        lines.append("TEST REPORT SUMMARY")
-        lines.append("=" * 60)
-        
-        # Handle different result types
         if 'benchmark_name' in test_results:
-            # Benchmark results
-            lines.append(f"Benchmark: {test_results['benchmark_name']}")
-            lines.append(f"Models tested: {', '.join(test_results['models_tested'])}")
-            
-            comparison = test_results.get('comparison', {})
-            if 'best_performers' in comparison:
-                lines.append("\nBest Performers:")
-                for metric, model in comparison['best_performers'].items():
-                    lines.append(f"  {metric}: {model}")
-            
+            # Benchmark report
+            return self._format_benchmark_summary(test_results)
         else:
-            # Single model test results
-            config = test_results.get('config', {})
-            summary = test_results.get('summary', {})
-            
-            lines.append(f"Test: {config.get('test_name', 'Unknown')}")
-            lines.append(f"Episodes: {config.get('num_episodes', 0)}")
-            
-            if summary:
-                success_metrics = summary.get('success_metrics', {})
-                perf_metrics = summary.get('performance_metrics', {})
-                
-                lines.append(f"\nSuccess Rate: {success_metrics.get('success_rate', 0):.1f}%")
-                lines.append(f"Average Steps: {perf_metrics.get('avg_steps', 0):.1f}")
-                lines.append(f"Average Reward: {perf_metrics.get('avg_reward', 0):.2f}")
+            # Single model test report
+            return self._format_test_summary(test_results)
+    
+    def _format_test_summary(self, results: Dict[str, Any]) -> str:
+        """Format single model test summary."""
+        summary = f"""
+Test Report: {results.get('test_name', 'Unknown Test')}
+{'='*50}
+
+Overview:
+  Episodes Tested: {results.get('total_episodes', 0)}
+  Success Rate: {results.get('success_rate', 0):.1f}%
+  Successes: {results.get('successes', 0)}
+
+Performance:
+  Average Steps: {results.get('avg_steps', 0):.1f}
+  Average Reward: {results.get('avg_reward', 0):.2f}
+  Test Duration: {results.get('total_test_duration', 0):.1f} seconds
+
+Status: {'PASSED' if results.get('success_rate', 0) >= 70 else 'NEEDS IMPROVEMENT'}
+"""
+        return summary
+    
+    def _format_benchmark_summary(self, results: Dict[str, Any]) -> str:
+        """Format benchmark summary."""
+        summary = f"""
+Benchmark Report: {results.get('benchmark_name', 'Unknown Benchmark')}
+{'='*50}
+
+Models Tested: {results.get('models_tested', 0)}
+
+Rankings:
+"""
         
-        lines.append("=" * 60)
-        return "\n".join(lines)
+        for i, model in enumerate(results.get('rankings', []), 1):
+            summary += f"  {i}. {model['model']} - {model['success_rate']:.1f}% success rate\n"
+        
+        best_model = results.get('best_model', {})
+        if best_model:
+            summary += f"\nBest Performing Model: {best_model.get('model', 'Unknown')}\n"
+        
+        return summary
 
 
 # Utility functions for common testing operations
 
-def quick_model_test(model_path: str, env, episodes: int = 10) -> Dict[str, Any]:
+def find_model_file(model_name: str) -> Optional[Path]:
+    """Find a model file by searching in common locations."""
+    search_paths = [
+        Path("models") / f"{model_name}.zip",
+        Path("models") / model_name,
+        Path(f"{model_name}.zip"),
+        Path(model_name),
+        Path(".") / f"{model_name}.zip",
+        Path(".") / model_name
+    ]
+    
+    for path in search_paths:
+        if path.exists():
+            return path
+    return None
+
+
+def list_available_models() -> List[str]:
+    """List all available saved models."""
+    models = []
+    
+    # Check current directory
+    for file in Path(".").glob("*.zip"):
+        models.append(file.stem)
+    
+    # Check models directory
+    models_dir = Path("models")
+    if models_dir.exists():
+        for file in models_dir.glob("*.zip"):
+            models.append(file.stem)
+    
+    return sorted(set(models))
+
+
+def test_saved_ai(model_name: str = "trained_escape_ai", episodes: int = 10,
+                 detailed_analysis: bool = False, save_report: bool = False):
     """
-    Quick test of a model with minimal configuration.
+    Test a saved AI model with comprehensive analytics and visualization.
     
     Args:
-        model_path: Path to the model file
-        env: Environment to test in
-        episodes: Number of episodes to run
+        model_name: Name of the model to test
+        episodes: Number of test episodes to run
+        detailed_analysis: Whether to perform detailed action analysis
+        save_report: Whether to save the testing report to file
+    """
+    from base_environment import TestEscapeCageEnv
+    
+    print(f"Loading saved AI: {model_name}")
+    print(f"Running {episodes} test episodes with analytics...")
+    
+    # Find the model file
+    model_path = find_model_file(model_name)
+    if not model_path:
+        print(f"Model '{model_name}' not found!")
+        print("Available models:")
+        available_models = list_available_models()
+        if available_models:
+            for model in available_models:
+                print(f"   - {model}")
+        else:
+            print("   - No models found")
+        return
+    
+    try:
+        # Create test environment
+        env = TestEscapeCageEnv()
+        
+        # Load the saved AI model
+        ai_agent = PPO.load(str(model_path), env=env)
+        print(f"AI model loaded from: {model_path}")
+        print("Watch the trained AI play! (Press Ctrl+C to stop early)")
+        
+        # Initialize analytics
+        analytics = TestingAnalytics()
+        
+        # Test the AI for multiple episodes
+        for episode in range(episodes):
+            print(f"\nEpisode {episode + 1}/{episodes}")
+            obs, _ = env.reset()
+            episode_steps = 0
+            action_history = []
+            total_reward = 0
+            
+            start_time = time.time()
+            
+            while True:
+                # AI makes decision (deterministic for consistent testing)
+                action, _states = ai_agent.predict(obs, deterministic=True)
+                action_history.append(int(action))
+                
+                obs, reward, terminated, truncated, info = env.step(action)
+                episode_steps += 1
+                total_reward += reward
+                
+                # Display real-time progress for detailed analysis
+                if detailed_analysis and episode_steps % 10 == 0:
+                    print(f"   Step {episode_steps}: Action {action}, Reward: {reward:.3f}")
+                
+                if terminated or truncated:
+                    success = info.get('success', False)
+                    
+                    # Record episode data
+                    analytics.record_episode(
+                        episode + 1, episode_steps, reward, success,
+                        action_history, total_reward, terminated, truncated
+                    )
+                    
+                    # Display episode result
+                    if success:
+                        print(f"   SUCCESS! Completed in {episode_steps} steps")
+                        print(f"   Total reward: {total_reward:.2f}")
+                    else:
+                        reason = "Time limit" if truncated else "Failed"
+                        print(f"   {reason} after {episode_steps} steps")
+                        print(f"   Total reward: {total_reward:.2f}")
+                    
+                    break
+            
+            # Brief pause between episodes
+            time.sleep(0.5)
+        
+        # Generate and display comprehensive report
+        report = analytics.generate_report()
+        display_test_report(report)
+        
+        # Save report if requested
+        if save_report:
+            save_test_report(report, model_name)
+        
+        env.close()
+        
+    except FileNotFoundError:
+        print(f"Model '{model_name}' not found!")
+        print("Available models:")
+        available_models = list_available_models()
+        if available_models:
+            for model in available_models:
+                print(f"   - {model}")
+        else:
+            print("   - No models found")
+        
+    except KeyboardInterrupt:
+        print(f"\nTesting stopped by user after {len(analytics.episodes_data)} episodes")
+        if analytics.episodes_data:
+            report = analytics.generate_report()
+            display_test_report(report)
+            if save_report:
+                save_test_report(report, model_name, suffix="_interrupted")
+        
+    except Exception as e:
+        print(f"Testing failed: {e}")
+        print("Make sure Unity is running with the escape cage scene loaded")
+
+
+def display_test_report(report: Dict[str, Any]):
+    """Display a comprehensive test report."""
+    if not report:
+        print("No test data to report")
+        return
+    
+    print(f"\n{'='*60}")
+    print("COMPREHENSIVE TEST REPORT")
+    print(f"{'='*60}")
+    
+    # Summary statistics
+    summary = report['summary']
+    print(f"\nSUMMARY:")
+    print(f"Episodes Tested: {summary['total_episodes']}")
+    print(f"Successes: {summary['successes']}")
+    print(f"Success Rate: {summary['success_rate']:.1f}%")
+    print(f"Total Test Time: {summary['total_test_time']:.1f} seconds")
+    
+    # Performance metrics
+    performance = report['performance']
+    print(f"\nPERFORMANCE METRICS:")
+    print(f"Average Steps: {performance['avg_steps']:.1f}")
+    print(f"Steps Range: {performance['min_steps']} - {performance['max_steps']}")
+    print(f"Average Reward: {performance['avg_reward']:.2f}")
+    print(f"Reward Range: {performance['min_reward']:.2f} - {performance['max_reward']:.2f}")
+    
+    # Completion analysis
+    completion = report['completion_types']
+    print(f"\nCOMPLETION ANALYSIS:")
+    print(f"Natural Successes: {completion['natural_success']}")
+    print(f"Timeout Failures: {completion['timeout_failure']}")
+    print(f"Other Failures: {completion['other_failure']}")
+    
+    # Strategy analysis for successful episodes
+    if 'successful_strategy' in report:
+        strategy = report['successful_strategy']
+        print(f"\nSUCCESSFUL STRATEGY ANALYSIS:")
+        for action, percentage in strategy.items():
+            print(f"   {action.upper()}: {percentage:.1f}%")
+    
+    # Performance assessment
+    success_rate = summary['success_rate']
+    print(f"\nPERFORMANCE ASSESSMENT:")
+    if success_rate >= 90:
+        print("   EXCELLENT: Your AI performs exceptionally well!")
+        print("   This model is ready for production use.")
+    elif success_rate >= 70:
+        print("   GOOD: Your AI shows strong performance.")
+        print("   Minor improvements could push it to excellence.")
+    elif success_rate >= 50:
+        print("   MODERATE: Your AI is learning but needs improvement.")
+        print("   Consider more training or hyperparameter adjustment.")
+    elif success_rate >= 25:
+        print("   POOR: Your AI struggles with the task.")
+        print("   Significant additional training recommended.")
+    else:
+        print("   VERY POOR: Your AI rarely succeeds.")
+        print("   Check training setup and increase training time significantly.")
+    
+    # Specific recommendations
+    avg_steps = performance['avg_steps']
+    print(f"\nRECOMMENDATIONS:")
+    if avg_steps > 300:
+        print("   - AI takes many steps - consider training for efficiency")
+    elif avg_steps < 50:
+        print("   - Very efficient! AI finds solutions quickly")
+    
+    if completion['timeout_failure'] > completion['natural_success']:
+        print("   - Many timeouts suggest AI gets stuck - needs more exploration training")
+
+
+def save_test_report(report: Dict[str, Any], model_name: str, suffix: str = ""):
+    """
+    Save test report to file.
+    
+    Args:
+        report: Test report data
+        model_name: Name of the model tested
+        suffix: Optional suffix for filename
+    """
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"test_report_{model_name}_{timestamp}{suffix}.json"
+    
+    try:
+        # Create reports directory
+        reports_dir = Path("reports")
+        reports_dir.mkdir(exist_ok=True)
+        
+        report_path = reports_dir / filename
+        
+        # Add metadata
+        report_with_metadata = {
+            'model_name': model_name,
+            'test_timestamp': timestamp,
+            'report_version': '1.0',
+            **report
+        }
+        
+        with open(report_path, 'w') as f:
+            json.dump(report_with_metadata, f, indent=2, default=str)
+        
+        print(f"\nTest report saved to: {report_path}")
+        
+    except Exception as e:
+        print(f"Failed to save test report: {e}")
+
+
+def compare_models(model1: str, model2: str, episodes: int = 10):
+    """
+    Compare the performance of two AI models side by side.
+    
+    Args:
+        model1: Name of the first model
+        model2: Name of the second model 
+        episodes: Number of episodes to test each model
+    """
+    from base_environment import TestEscapeCageEnv
+    
+    print(f"Comparing models: '{model1}' vs '{model2}'")
+    print(f"Testing {episodes} episodes for each model...")
+    
+    results = {}
+    
+    for model_name in [model1, model2]:
+        print(f"\nTesting model: {model_name}")
+        model_path = find_model_file(model_name)
+        
+        if not model_path:
+            print(f"Model '{model_name}' not found!")
+            continue
+        
+        try:
+            env = TestEscapeCageEnv()
+            ai_agent = PPO.load(str(model_path), env=env)
+            analytics = TestingAnalytics()
+            
+            # Run test episodes quickly (less verbose)
+            for episode in range(episodes):
+                obs, _ = env.reset()
+                episode_steps = 0
+                action_history = []
+                total_reward = 0
+                
+                while episode_steps < 500:
+                    action, _ = ai_agent.predict(obs, deterministic=True)
+                    action_history.append(int(action))
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    episode_steps += 1
+                    total_reward += reward
+                    
+                    if terminated or truncated:
+                        success = info.get('success', False)
+                        
+                        analytics.record_episode(
+                            episode + 1, episode_steps, reward, success,
+                            action_history, total_reward, terminated, truncated
+                        )
+                        break
+            
+            results[model_name] = analytics.generate_report()
+            env.close()
+            
+        except Exception as e:
+            print(f"Error testing {model_name}: {e}")
+            continue
+    
+    # Display comparison
+    if len(results) == 2:
+        print(f"\n{'='*60}")
+        print("MODEL COMPARISON RESULTS")
+        print(f"{'='*60}")
+        
+        model_names = list(results.keys())
+        r1, r2 = results[model_names[0]], results[model_names[1]]
+        
+        print(f"\n{'Metric':<20} | {model_names[0]:<15} | {model_names[1]:<15} | Winner")
+        print("-" * 70)
+        
+        # Success rate comparison
+        sr1 = r1['summary']['success_rate']
+        sr2 = r2['summary']['success_rate']
+        winner = model_names[0] if sr1 > sr2 else model_names[1]
+        print(f"{'Success Rate':<20} | {sr1:<14.1f}% | {sr2:<14.1f}% | {winner}")
+        
+        # Average steps comparison
+        as1 = r1['performance']['avg_steps']
+        as2 = r2['performance']['avg_steps']
+        winner = model_names[0] if as1 < as2 else model_names[1]  # Fewer steps is better
+        print(f"{'Avg Steps':<20} | {as1:<14.1f}  | {as2:<14.1f}  | {winner}")
+        
+        # Average reward comparison
+        ar1 = r1['performance']['avg_reward']
+        ar2 = r2['performance']['avg_reward']
+        winner = model_names[0] if ar1 > ar2 else model_names[1]
+        print(f"{'Avg Reward':<20} | {ar1:<14.2f}  | {ar2:<14.2f}  | {winner}")
+        
+        # Overall winner
+        scores = {model_names[0]: 0, model_names[1]: 0}
+        if sr1 > sr2: scores[model_names[0]] += 1
+        else: scores[model_names[1]] += 1
+        
+        if as1 < as2: scores[model_names[0]] += 1
+        else: scores[model_names[1]] += 1
+        
+        if ar1 > ar2: scores[model_names[0]] += 1
+        else: scores[model_names[1]] += 1
+        
+        overall_winner = max(scores, key=scores.get)
+        print(f"\nOVERALL WINNER: {overall_winner}")
+        print(f"Score: {overall_winner} wins {scores[overall_winner]}/3 metrics")
+        
+    else:
+        print("Could not compare models - insufficient valid results")
+
+
+def run_batch_tests(model_names: List[str], episodes: int = 10) -> Dict[str, Any]:
+    """
+    Run tests on multiple models and generate comparative report.
+    
+    Args:
+        model_names: List of model names to test
+        episodes: Number of episodes per model
         
     Returns:
-        Test results dictionary
+        Batch test results
     """
-    try:
-        model = PPO.load(model_path)
+    print(f"Running batch tests on {len(model_names)} models...")
+    
+    # Create benchmark
+    benchmark = ModelBenchmark("batch_test")
+    
+    for model_name in model_names:
+        print(f"\nTesting {model_name}...")
         
+        # Create test config
         config = TestConfiguration(
-            test_name=f"quick_test_{Path(model_path).stem}",
+            test_name=f"batch_test_{model_name}",
             num_episodes=episodes,
             deterministic=True
         )
         
-        runner = TestRunner(config)
-        return runner.run_model_test(model, env)
+        model_path = find_model_file(model_name)
+        if not model_path:
+            print(f"Model {model_name} not found, skipping...")
+            continue
         
-    except Exception as e:
-        return {'error': str(e)}
-
-
-def compare_models_quick(model_paths: List[str], env, 
-                        episodes: int = 10) -> Dict[str, Any]:
-    """
-    Quick comparison of multiple models.
-    
-    Args:
-        model_paths: List of paths to model files
-        env: Environment to test in
-        episodes: Number of episodes per model
-        
-    Returns:
-        Benchmark results dictionary
-    """
-    models = {}
-    
-    for path in model_paths:
         try:
-            model_name = Path(path).stem
-            model = PPO.load(path)
-            models[model_name] = model
-        except Exception as e:
-            logging.error(f"Failed to load model {path}: {e}")
-    
-    if not models:
-        return {'error': 'No models loaded successfully'}
-    
-    config = TestConfiguration(
-        test_name="quick_comparison",
-        num_episodes=episodes,
-        deterministic=True
-    )
-    
-    benchmark = ModelBenchmark("quick_benchmark")
-    return benchmark.run_model_benchmark(models, env, config)
-
-
-def validate_environment_performance(env, num_episodes: int = 100) -> Dict[str, Any]:
-    """
-    Test environment performance and stability.
-    
-    Args:
-        env: Environment to test
-        num_episodes: Number of episodes to run
-        
-    Returns:
-        Environment performance metrics
-    """
-    results = {
-        'total_episodes': num_episodes,
-        'successful_resets': 0,
-        'successful_steps': 0,
-        'total_steps': 0,
-        'reset_times': [],
-        'step_times': [],
-        'errors': []
-    }
-    
-    for episode in range(num_episodes):
-        try:
-            # Test reset
-            start_time = time.time()
-            obs, _ = env.reset()
-            reset_time = time.time() - start_time
-            results['reset_times'].append(reset_time)
-            results['successful_resets'] += 1
+            from base_environment import TestEscapeCageEnv
+            env = TestEscapeCageEnv()
+            model = PPO.load(str(model_path), env=env)
             
-            # Test steps
-            for step in range(100):  # Test 100 steps per episode
-                start_time = time.time()
-                action = env.action_space.sample()
-                obs, reward, terminated, truncated, info = env.step(action)
-                step_time = time.time() - start_time
-                
-                results['step_times'].append(step_time)
-                results['successful_steps'] += 1
-                results['total_steps'] += 1
-                
-                if terminated or truncated:
-                    break
-                    
+            runner = TestRunner(config)
+            results = runner.run_model_test(model, env)
+            benchmark.add_model_results(model_name, results)
+            
+            env.close()
+            
         except Exception as e:
-            results['errors'].append(f"Episode {episode}: {str(e)}")
+            print(f"Error testing {model_name}: {e}")
     
-    # Calculate summary statistics
-    if results['reset_times']:
-        results['avg_reset_time'] = np.mean(results['reset_times'])
-        results['max_reset_time'] = np.max(results['reset_times'])
+    return benchmark.generate_benchmark_report()
+
+
+def main():
+    """Main function for command-line testing interface."""
+    parser = argparse.ArgumentParser(description="AI Model Testing Utilities")
     
-    if results['step_times']:
-        results['avg_step_time'] = np.mean(results['step_times'])
-        results['max_step_time'] = np.max(results['step_times'])
-        results['steps_per_second'] = 1.0 / np.mean(results['step_times'])
+    # Action selection
+    parser.add_argument('action', choices=['test', 'compare', 'batch', 'list'], 
+                       help='Action to perform')
     
-    results['reset_success_rate'] = (results['successful_resets'] / num_episodes) * 100
-    results['step_success_rate'] = (results['successful_steps'] / results['total_steps']) * 100 if results['total_steps'] > 0 else 0
+    # Common arguments
+    parser.add_argument('--model', '-m', default='trained_escape_ai',
+                       help='Model name to test (default: trained_escape_ai)')
+    parser.add_argument('--episodes', '-e', type=int, default=10,
+                       help='Number of test episodes (default: 10)')
+    parser.add_argument('--detailed', '-d', action='store_true',
+                       help='Enable detailed analysis during testing')
+    parser.add_argument('--save-report', '-s', action='store_true',
+                       help='Save test report to file')
     
-    return results 
+    # Compare specific arguments
+    parser.add_argument('--model2', help='Second model for comparison')
+    
+    # Batch testing arguments
+    parser.add_argument('--models', nargs='+', help='List of models for batch testing')
+    
+    args = parser.parse_args()
+    
+    if args.action == 'list':
+        print("Available models:")
+        models = list_available_models()
+        if models:
+            for model in models:
+                print(f"   - {model}")
+        else:
+            print("   - No models found")
+    
+    elif args.action == 'test':
+        test_saved_ai(args.model, args.episodes, args.detailed, args.save_report)
+    
+    elif args.action == 'compare':
+        if not args.model2:
+            print("--model2 required for comparison")
+            return
+        compare_models(args.model, args.model2, args.episodes)
+    
+    elif args.action == 'batch':
+        if not args.models:
+            print("--models required for batch testing")
+            return
+        
+        results = run_batch_tests(args.models, args.episodes)
+        
+        # Display results
+        generator = TestReportGenerator()
+        summary = generator.generate_text_summary(results)
+        print(summary)
+        
+        # Save report if requested
+        if args.save_report:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"batch_test_report_{timestamp}.json"
+            generator.generate_json_report(results, filename)
+
+
+if __name__ == "__main__":
+    main() 

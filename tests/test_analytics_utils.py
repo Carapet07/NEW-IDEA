@@ -1,30 +1,23 @@
 """
-🧪 Analytics Utilities Tests
-Comprehensive unit tests for analytics_utils module functionality.
+Analytics Utilities Tests
 
-Test coverage:
-- EpisodeMetrics dataclass functionality
-- PerformanceAnalyzer comprehensive analysis
-- Learning curve data generation
-- Action pattern analysis
-- Visualization plot creation
-- Data export functionality
-- Performance comparison between sessions
-- Quick analysis utility functions
+Comprehensive test suite for analytics utilities including performance tracking,
+episode metrics, and visualization tools.
 """
 
 import unittest
 import tempfile
-import shutil
 import json
 import numpy as np
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 import sys
 import os
 
-# Add ml_training to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'ml_training'))
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "ml_training"))
 
 try:
     from analytics_utils import (
@@ -454,12 +447,12 @@ def run_analytics_tests():
 
 if __name__ == '__main__':
     if ANALYTICS_AVAILABLE:
-        print("🧪 Running Analytics Utilities Tests...")
+        print("Running Analytics Utilities Tests...")
         success = run_analytics_tests()
         if success:
-            print("✅ All analytics tests passed!")
+            print("All analytics tests passed!")
         else:
-            print("❌ Some analytics tests failed!")
+            print("Some analytics tests failed!")
     else:
-        print("⚠️ Analytics utilities not available for testing")
+        print("Analytics utilities not available for testing")
         unittest.main() 

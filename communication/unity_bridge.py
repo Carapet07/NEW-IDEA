@@ -1,6 +1,6 @@
 """
 Unity-Python Communication Bridge
-Enhanced socket-based communication between Unity and Python with robust error handling
+Enhanced socket-based communication between Unity and Python
 """
 
 import socket
@@ -84,20 +84,20 @@ class UnityBridge:
             self.socket.listen(1)
             self.is_server_running = True
             
-            self.logger.info(f"🚀 Python server started on {self.host}:{self.port}")
-            self.logger.info("⏳ Waiting for Unity connection...")
+            self.logger.info(f"Python server started on {self.host}:{self.port}")
+            self.logger.info("Waiting for Unity connection...")
             
             return True
             
         except socket.error as e:
             if e.errno == 48:  # Address already in use
-                self.logger.error(f"❌ Port {self.port} is already in use. "
+                self.logger.error(f"Port {self.port} is already in use. "
                                 "Try a different port or check if another instance is running.")
             else:
-                self.logger.error(f"❌ Socket error starting server: {e}")
+                self.logger.error(f"Socket error starting server: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"❌ Unexpected error starting server: {e}")
+            self.logger.error(f"Unexpected error starting server: {e}")
             return False
     
     def wait_for_unity(self, timeout: float = 30.0) -> bool:
@@ -111,7 +111,7 @@ class UnityBridge:
             True if Unity connected successfully, False otherwise
         """
         if not self.is_server_running or not self.socket:
-            self.logger.error("❌ Server not running. Call start_server() first.")
+            self.logger.error("Server not running. Call start_server() first.")
             return False
         
         try:
@@ -127,25 +127,25 @@ class UnityBridge:
             self.last_successful_communication = time.time()
             self.failed_communications = 0
             
-            self.logger.info(f"✅ Unity connected from {addr}")
-            self.logger.info(f"🔗 Connection established at {time.strftime('%H:%M:%S')}")
+            self.logger.info(f"Unity connected from {addr}")
+            self.logger.info(f"Connection established at {time.strftime('%H:%M:%S')}")
             
             # Test the connection with a ping
             if self._test_connection():
                 return True
             else:
-                self.logger.warning("⚠️ Connection test failed, but proceeding...")
+                self.logger.warning("Connection test failed, but proceeding...")
                 return True
                 
         except socket.timeout:
-            self.logger.error(f"⏰ Timeout waiting for Unity connection ({timeout}s)")
-            self.logger.info("💡 Make sure Unity is running and the escape cage scene is loaded")
+            self.logger.error(f"Timeout waiting for Unity connection ({timeout}s)")
+            self.logger.info("Make sure Unity is running and the escape cage scene is loaded")
             return False
         except socket.error as e:
-            self.logger.error(f"❌ Socket error during connection: {e}")
+            self.logger.error(f"Socket error during connection: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"❌ Unexpected connection error: {e}")
+            self.logger.error(f"Unexpected connection error: {e}")
             return False
     
     def _test_connection(self) -> bool:
@@ -155,7 +155,7 @@ class UnityBridge:
             self.client_socket.send(test_message.encode('utf-8'))
             return True
         except Exception as e:
-            self.logger.warning(f"⚠️ Connection test failed: {e}")
+            self.logger.warning(f"Connection test failed: {e}")
             return False
     
     def send_action(self, action: int) -> bool:
@@ -175,7 +175,7 @@ class UnityBridge:
             try:
                 # Validate action
                 if not isinstance(action, int) or action < 0 or action > 3:
-                    self.logger.warning(f"⚠️ Invalid action: {action}. Using 0 instead.")
+                    self.logger.warning(f"Invalid action: {action}. Using 0 instead.")
                     action = 0
                 
                 # Send action with newline delimiter
@@ -186,32 +186,31 @@ class UnityBridge:
                 self.last_successful_communication = time.time()
                 if self.failed_communications > 0:
                     self.failed_communications = 0
-                    self.logger.info("✅ Communication restored")
+                    self.logger.info("Communication restored")
                 
                 return True
                 
             except socket.timeout:
-                self.logger.warning(f"⏰ Timeout sending action (attempt {attempt + 1}/{self.max_retries})")
+                self.logger.warning(f"Timeout sending action (attempt {attempt + 1}/{self.max_retries})")
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
                     continue
             except socket.error as e:
-                self.logger.warning(f"❌ Socket error sending action: {e} (attempt {attempt + 1}/{self.max_retries})")
+                self.logger.warning(f"Socket error sending action: {e} (attempt {attempt + 1}/{self.max_retries})")
                 if attempt < self.max_retries - 1:
                     if self._try_reconnect():
                         continue
                     time.sleep(self.retry_delay)
             except Exception as e:
-                self.logger.error(f"❌ Unexpected error sending action: {e}")
+                self.logger.error(f"Unexpected error sending action: {e}")
                 break
         
         # All attempts failed
+        self.logger.error(f"Failed to send action after {self.max_retries} attempts")
         self.failed_communications += 1
-        self.logger.error(f"❌ Failed to send action after {self.max_retries} attempts")
         
-        # Mark as disconnected if too many failures
         if self.failed_communications >= 5:
-            self.logger.error("❌ Too many communication failures. Marking as disconnected.")
+            self.logger.error("Too many communication failures. Marking as disconnected.")
             self.is_connected = False
         
         return False
@@ -232,7 +231,7 @@ class UnityBridge:
                 data = self.client_socket.recv(4096).decode('utf-8')
                 
                 if not data:
-                    self.logger.warning("⚠️ Received empty data from Unity")
+                    self.logger.warning("Received empty data from Unity")
                     self.is_connected = False
                     return {}
                 
@@ -244,25 +243,25 @@ class UnityBridge:
                     self.last_successful_communication = time.time()
                     if self.failed_communications > 0:
                         self.failed_communications = 0
-                        self.logger.info("✅ Communication restored")
+                        self.logger.info("Communication restored")
                     return observation
                 else:
-                    self.logger.warning(f"⚠️ Failed to parse observation data: {data[:100]}...")
+                    self.logger.warning(f"Failed to parse observation data: {data[:100]}...")
                     
             except socket.timeout:
                 # Timeout is common during normal operation, don't spam logs
                 if attempt == 0:  # Only log on first timeout
-                    self.logger.debug("⏰ Timeout receiving observation")
+                    self.logger.debug("Timeout receiving observation")
                 if attempt < self.max_retries - 1:
                     continue
             except socket.error as e:
-                self.logger.warning(f"❌ Socket error receiving observation: {e} (attempt {attempt + 1}/{self.max_retries})")
+                self.logger.warning(f"Socket error receiving observation: {e} (attempt {attempt + 1}/{self.max_retries})")
                 if attempt < self.max_retries - 1:
                     if self._try_reconnect():
                         continue
                     time.sleep(self.retry_delay * 0.5)  # Shorter delay for observations
             except Exception as e:
-                self.logger.error(f"❌ Unexpected error receiving observation: {e}")
+                self.logger.error(f"Unexpected error receiving observation: {e}")
                 break
         
         # All attempts failed
@@ -317,7 +316,7 @@ class UnityBridge:
             return {}
             
         except Exception as e:
-            self.logger.error(f"❌ Error parsing observation data: {e}")
+            self.logger.error(f"Error parsing observation data: {e}")
             return {}
     
     def reset_environment(self) -> bool:
@@ -340,39 +339,39 @@ class UnityBridge:
                 return True
                 
             except socket.timeout:
-                self.logger.warning(f"⏰ Timeout sending reset (attempt {attempt + 1}/{self.max_retries})")
+                self.logger.warning(f"Timeout sending reset (attempt {attempt + 1}/{self.max_retries})")
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
             except socket.error as e:
-                self.logger.warning(f"❌ Socket error sending reset: {e}")
+                self.logger.warning(f"Socket error sending reset: {e}")
                 if attempt < self.max_retries - 1:
                     if self._try_reconnect():
                         continue
                     time.sleep(self.retry_delay)
             except Exception as e:
-                self.logger.error(f"❌ Unexpected error sending reset: {e}")
+                self.logger.error(f"Unexpected error sending reset: {e}")
                 break
         
-        self.logger.error(f"❌ Failed to send reset after {self.max_retries} attempts")
+        self.logger.error(f"Failed to send reset after {self.max_retries} attempts")
         return False
     
     def _check_connection(self) -> bool:
         """Check if the connection is still valid."""
         if not self.is_connected or not self.client_socket:
-            self.logger.debug("❌ Not connected to Unity")
+            self.logger.debug("Not connected to Unity")
             return False
         
         # Check if connection has been idle for too long
         if self.last_successful_communication:
             idle_time = time.time() - self.last_successful_communication
             if idle_time > 300:  # 5 minutes of inactivity
-                self.logger.warning(f"⚠️ Connection has been idle for {idle_time:.1f} seconds")
+                self.logger.warning(f"Connection has been idle for {idle_time:.1f} seconds")
         
         return True
     
     def _try_reconnect(self) -> bool:
         """Attempt to reconnect to Unity."""
-        self.logger.info("🔄 Attempting to reconnect to Unity...")
+        self.logger.info("Attempting to reconnect to Unity...")
         
         # Close current connection
         if self.client_socket:
@@ -391,12 +390,12 @@ class UnityBridge:
                 self.client_socket, addr = self.socket.accept()
                 self.client_socket.settimeout(5.0)
                 self.is_connected = True
-                self.logger.info(f"✅ Reconnected to Unity from {addr}")
+                self.logger.info(f"Reconnected to Unity from {addr}")
                 return True
             except socket.timeout:
-                self.logger.debug("⏰ Reconnection timeout")
+                self.logger.debug("Reconnection timeout")
             except Exception as e:
-                self.logger.debug(f"❌ Reconnection failed: {e}")
+                self.logger.debug(f"Reconnection failed: {e}")
         
         return False
     
@@ -419,100 +418,99 @@ class UnityBridge:
         Returns:
             Dictionary containing connection statistics
         """
-        stats = {
+        uptime = 0
+        if self.connection_start_time:
+            uptime = time.time() - self.connection_start_time
+        
+        last_communication = 0
+        if self.last_successful_communication:
+            last_communication = time.time() - self.last_successful_communication
+        
+        return {
             'is_connected': self.is_connected,
             'is_server_running': self.is_server_running,
+            'uptime_seconds': uptime,
+            'last_communication_seconds_ago': last_communication,
             'failed_communications': self.failed_communications,
-            'connection_start_time': self.connection_start_time,
-            'last_successful_communication': self.last_successful_communication
+            'host': self.host,
+            'port': self.port
         }
-        
-        if self.connection_start_time:
-            stats['connection_duration'] = time.time() - self.connection_start_time
-        
-        if self.last_successful_communication:
-            stats['time_since_last_communication'] = time.time() - self.last_successful_communication
-        
-        return stats
     
     def close(self):
-        """Close all connections and clean up resources."""
-        self.logger.info("🔒 Closing Unity bridge...")
-        
-        self.is_connected = False
-        self.is_server_running = False
+        """Close the Unity bridge and clean up resources."""
+        self.logger.info("Closing Unity bridge...")
         
         try:
-            # Send a shutdown message if possible
-            if self.client_socket and self.is_connected:
+            self.is_connected = False
+            self.is_server_running = False
+            
+            # Close client connection
+            if self.client_socket:
                 try:
-                    self.client_socket.send("shutdown\n".encode('utf-8'))
-                    time.sleep(0.1)  # Give Unity time to process
+                    self.client_socket.shutdown(socket.SHUT_RDWR)
                 except:
                     pass
+                self.client_socket.close()
+                self.client_socket = None
             
-            self._cleanup_socket()
-            self.logger.info("🔒 Unity bridge closed successfully")
+            # Close server socket
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+            
+            self.logger.info("Unity bridge closed successfully")
             
         except Exception as e:
-            self.logger.error(f"❌ Error during cleanup: {e}")
+            self.logger.error(f"Error during cleanup: {e}")
     
     def __enter__(self):
         """Context manager entry."""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
+        """Context manager exit with cleanup."""
         self.close()
 
 
-# Enhanced testing function
 def test_unity_bridge(episodes: int = 5, detailed_logging: bool = False):
     """
-    Enhanced test function for the Unity bridge with comprehensive testing.
+    Test the Unity bridge functionality with comprehensive error checking.
     
     Args:
         episodes: Number of test episodes to run
-        detailed_logging: Whether to enable detailed debug logging
+        detailed_logging: Whether to enable detailed logging
     """
-    # Configure logging level
-    logger = logging.getLogger(__name__)
-    if detailed_logging:
-        logger.setLevel(logging.DEBUG)
-    
-    print("🧪 Starting Unity Bridge Test")
-    print(f"📊 Running {episodes} test episodes")
+    print("Starting Unity Bridge Test")
+    print("=" * 40)
     
     with UnityBridge() as bridge:
         if not bridge.start_server():
-            print("❌ Failed to start server")
-            return
+            print("Failed to start server")
+            return False
         
         if not bridge.wait_for_unity():
-            print("❌ Failed to connect to Unity")
-            return
+            print("Failed to connect to Unity")
+            return False
         
-        print("🎮 Unity connected! Starting communication test...")
+        print("Unity connected! Starting communication test...")
         
-        # Test basic communication
         success_count = 0
         total_messages = 0
         
         for episode in range(episodes):
-            print(f"\n🎯 Test Episode {episode + 1}")
+            print(f"\nTest Episode {episode + 1}")
             
             # Reset environment
             if bridge.reset_environment():
-                print("✅ Environment reset successful")
+                print("Environment reset successful")
             else:
-                print("❌ Environment reset failed")
+                print("Environment reset failed")
                 continue
             
-            time.sleep(0.1)
+            episode_steps = 0
+            max_steps = 50
             
-            # Test action sending and observation receiving
-            episode_successes = 0
-            for step in range(10):
+            for step in range(max_steps):
                 # Send random action
                 action = np.random.randint(0, 4)
                 
@@ -522,59 +520,54 @@ def test_unity_bridge(episodes: int = 5, detailed_logging: bool = False):
                     # Receive observation
                     obs = bridge.receive_observation()
                     if obs:
-                        episode_successes += 1
+                        total_messages += 1
+                        episode_steps += 1
+                        
                         if detailed_logging:
-                            print(f"   Step {step}: Action={action}, Obs keys: {list(obs.keys())}")
+                            print(f"  Step {step + 1}: Action={action}, "
+                                  f"Player=({obs.get('player_x', 0):.1f}, {obs.get('player_y', 0):.1f})")
+                        
+                        # Check if escaped
+                        if obs.get('escaped', False):
+                            success_count += 1
+                            print(f"  SUCCESS! Escaped in {episode_steps} steps")
+                            break
                     else:
-                        print(f"   Step {step}: Action sent but no observation received")
+                        print(f"  Failed to receive observation at step {step + 1}")
+                        break
                 else:
-                    print(f"   Step {step}: Failed to send action")
+                    print(f"  Failed to send action at step {step + 1}")
+                    break
                 
-                time.sleep(0.1)
-            
-            success_rate = (episode_successes / 10) * 100
-            print(f"   Episode success rate: {success_rate:.1f}%")
-            
-            if episode_successes >= 8:  # 80% success threshold
-                success_count += 1
+                # Small delay to simulate realistic gameplay
+                time.sleep(0.05)
         
-        # Display final results
-        overall_success_rate = (success_count / episodes) * 100
+        # Display results
+        print(f"\n" + "=" * 40)
+        print("TEST RESULTS:")
+        print(f"Episodes Successful: {success_count}/{episodes}")
+        success_rate = (success_count / episodes) * 100 if episodes > 0 else 0
+        print(f"Success Rate: {success_rate:.1f}%")
+        print(f"Total Messages: {total_messages}")
         
-        print(f"\n📊 TEST RESULTS:")
-        print(f"🎯 Episodes Successful: {success_count}/{episodes}")
-        print(f"📈 Overall Success Rate: {overall_success_rate:.1f}%")
-        print(f"📡 Total Messages: {total_messages}")
-        
-        # Display connection stats
+        # Get connection stats
         stats = bridge.get_connection_stats()
-        print(f"\n🔗 CONNECTION STATISTICS:")
-        for key, value in stats.items():
-            if isinstance(value, float) and key.endswith('_time'):
-                if value > 0:
-                    print(f"   {key}: {time.strftime('%H:%M:%S', time.localtime(value))}")
-            else:
-                print(f"   {key}: {value}")
+        print(f"Connection Uptime: {stats['uptime_seconds']:.1f} seconds")
+        print(f"Failed Communications: {stats['failed_communications']}")
         
-        # Performance assessment
-        if overall_success_rate >= 90:
-            print("\n🌟 EXCELLENT! Unity bridge is working perfectly.")
-        elif overall_success_rate >= 70:
-            print("\n👍 GOOD! Unity bridge is working well with minor issues.")
-        elif overall_success_rate >= 50:
-            print("\n⚠️ MODERATE! Unity bridge has some communication problems.")
+        # Evaluate connection quality
+        if stats['failed_communications'] == 0 and success_rate > 60:
+            print("\nEXCELLENT! Unity bridge is working perfectly.")
+        elif stats['failed_communications'] < 3 and success_rate > 40:
+            print("\nGOOD! Unity bridge is working well with minor issues.")
+        elif stats['failed_communications'] < 10 and success_rate > 20:
+            print("\nMODERATE! Unity bridge has some communication problems.")
         else:
-            print("\n❌ POOR! Unity bridge has significant issues.")
+            print("\nPOOR! Unity bridge has significant issues.")
+            print("Consider restarting Unity and Python, or checking network connectivity.")
+        
+        return success_rate > 50
 
 
 if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Test Unity Bridge Communication')
-    parser.add_argument('--episodes', '-e', type=int, default=5,
-                       help='Number of test episodes (default: 5)')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                       help='Enable detailed logging')
-    
-    args = parser.parse_args()
-    test_unity_bridge(args.episodes, args.verbose) 
+    test_unity_bridge(episodes=3, detailed_logging=True) 

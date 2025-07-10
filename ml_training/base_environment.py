@@ -1,58 +1,8 @@
 """
-🏛️ Base Environment Classes
-Comprehensive shared functionality for all escape cage training environments.
+Base Environment Classes
 
-This module provides the foundational architecture for escape cage reinforcement learning environments,
-implementing a clean hierarchy that eliminates code duplication and ensures consistent behavior.
-
-Architecture Overview:
-┌─────────────────────────────────────────────────────────────────┐
-│                    BaseEscapeCageEnv (Abstract)                 │
-│  - Unity connection management with robust error handling       │
-│  - Standard action/observation space definitions                │
-│  - Common environment operations and episode tracking          │
-│  - Abstract reward calculation for subclass customization      │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-           ┌──────────────┼──────────────┐
-           │              │              │
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │ SimpleEscape│ │ FastEscape  │ │ TestEscape  │
-    │ CageEnv     │ │ CageEnv     │ │ CageEnv     │
-    │             │ │             │ │             │
-    │ Standard    │ │ Aggressive  │ │ Enhanced    │
-    │ training    │ │ rewards for │ │ testing     │
-    │ with        │ │ rapid       │ │ with action │
-    │ balanced    │ │ learning    │ │ tracking &  │
-    │ rewards     │ │             │ │ analytics   │
-    └─────────────┘ └─────────────┘ └─────────────┘
-
-Environment Features:
-- Standardized observation space: [player_x, player_y, has_key, key_x, key_y, exit_x, exit_y]
-- Action space: Discrete(4) representing [up, down, left, right] movements
-- Robust Unity communication with connection recovery and error handling
-- Comprehensive episode tracking with detailed information collection
-- Flexible reward calculation system for different training strategies
-
-Key Classes:
-- BaseEscapeCageEnv: Abstract base class providing shared functionality
-- SimpleEscapeCageEnv: Standard training environment with balanced rewards
-- FastEscapeCageEnv: Optimized for rapid learning with aggressive reward shaping
-- TestEscapeCageEnv: Enhanced testing environment with detailed analytics
-
-Usage Examples:
-    # Standard training environment
-    env = SimpleEscapeCageEnv()
-    
-    # Fast training for quick prototyping
-    fast_env = FastEscapeCageEnv()
-    
-    # Testing with analytics
-    test_env = TestEscapeCageEnv()
-
-Error Handling:
-All environments include comprehensive error handling for Unity communication,
-with graceful fallbacks and informative error messages to aid debugging.
+Shared environment implementations for the AI escape cage training system.
+Provides standardized interfaces and Unity integration.
 """
 
 import numpy as np
@@ -62,7 +12,7 @@ import sys
 import os
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple, Optional, List
 
 # Add communication folder to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'communication'))
@@ -116,22 +66,22 @@ class BaseEscapeCageEnv(gym.Env, ABC):
         Raises:
             SystemExit: If Unity connection fails
         """
-        print("🚀 Starting AI system...")
-        print("⏳ Waiting for Unity connection...")
+        print("Starting AI system...")
+        print("Waiting for Unity connection...")
         
         try:
             if self.unity.start_server():
                 if self.unity.wait_for_unity(timeout=self.connection_timeout):
-                    print("✅ Unity connected! Training will start!")
+                    print("Unity connected! Training will start!")
                 else:
-                    print(f"❌ Unity didn't connect within {self.connection_timeout}s. "
+                    print(f"Unity didn't connect within {self.connection_timeout}s. "
                           "Make sure Unity is running.")
                     raise SystemExit(1)
             else:
-                print("❌ Failed to start server.")
+                print("Failed to start server.")
                 raise SystemExit(1)
         except Exception as e:
-            print(f"❌ Unity connection failed: {e}")
+            print(f"Unity connection failed: {e}")
             raise SystemExit(1)
     
     @abstractmethod
@@ -167,7 +117,7 @@ class BaseEscapeCageEnv(gym.Env, ABC):
             self.unity.reset_environment()
             time.sleep(self.step_delay)
         except Exception as e:
-            print(f"⚠️ Warning: Failed to reset Unity environment: {e}")
+            print(f"Warning: Failed to reset Unity environment: {e}")
         
         # Get initial state
         obs_data = self._safe_receive_observation()
@@ -198,7 +148,7 @@ class BaseEscapeCageEnv(gym.Env, ABC):
             self.unity.send_action(action)
             time.sleep(self.step_delay)
         except Exception as e:
-            print(f"⚠️ Warning: Failed to send action to Unity: {e}")
+            print(f"Warning: Failed to send action to Unity: {e}")
         
         # Get new state from Unity
         obs_data = self._safe_receive_observation()
@@ -237,7 +187,7 @@ class BaseEscapeCageEnv(gym.Env, ABC):
         try:
             return self.unity.receive_observation()
         except Exception as e:
-            print(f"⚠️ Warning: Failed to receive observation from Unity: {e}")
+            print(f"Warning: Failed to receive observation from Unity: {e}")
             return {}
     
     def _make_observation(self, obs_data: Dict[str, Any]) -> np.ndarray:
@@ -281,9 +231,9 @@ class BaseEscapeCageEnv(gym.Env, ABC):
         """Close Unity connection and clean up resources."""
         try:
             self.unity.close()
-            print("🔒 Environment closed successfully")
+            print("Environment closed successfully")
         except Exception as e:
-            print(f"⚠️ Warning: Error closing environment: {e}")
+            print(f"Warning: Error closing environment: {e}")
 
 
 class SimpleEscapeCageEnv(BaseEscapeCageEnv):
@@ -322,11 +272,11 @@ class SimpleEscapeCageEnv(BaseEscapeCageEnv):
         
         if obs_data.get('escaped', False):
             reward += 100
-            print("🎉 AI ESCAPED! +100 points")
+            print("AI ESCAPED! +100 points")
         
         if obs_data.get('key_picked_up', False):
             reward += 10
-            print("🗝️ AI found the key! +10 points")
+            print("AI found the key! +10 points")
         
         return reward
 
@@ -404,13 +354,13 @@ class FastEscapeCageEnv(BaseEscapeCageEnv):
         # Ultimate success: Agent has successfully escaped
         if obs_data.get('escaped', False):
             reward += 200  # Maximum reward for completing the task
-            print("🎉 AI ESCAPED! +200 points")
+            print("AI ESCAPED! +200 points")
             return reward  # Early return since episode is complete
         
         # Major milestone: Agent has collected the key
         if obs_data.get('key_picked_up', False):
             reward += 50   # Large reward for reaching first major goal
-            print("🗝️ AI found the key! +50 points")
+            print("AI found the key! +50 points")
             return reward  # Early return to avoid double-counting
         
         # === PROGRESSIVE REWARDS (Dense reward shaping for continuous learning) ===
@@ -535,10 +485,10 @@ class TestEscapeCageEnv(BaseEscapeCageEnv):
         
         if obs_data.get('escaped', False):
             reward += 100
-            print("🎉 AI ESCAPED! Smart AI!")
+            print("AI ESCAPED! Smart AI!")
         
         if obs_data.get('key_picked_up', False):
             reward += 10
-            print("🗝️ AI grabbed the key! Strategic thinking!")
+            print("AI grabbed the key! Strategic thinking!")
         
         return reward 

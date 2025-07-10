@@ -1,13 +1,8 @@
 """
-📊 Analytics Utilities Module
-Comprehensive analytics and metrics utilities for ML training and testing.
+Analytics Utilities Module
 
-This module provides:
-- Performance metrics calculation and tracking
-- Training progress visualization utilities
-- Episode analytics and reporting
-- Model comparison and benchmarking tools
-- Data export and visualization helpers
+Comprehensive performance analysis and visualization tools for AI training sessions.
+Provides detailed analytics, learning curves, action pattern analysis, and statistical reporting.
 """
 
 import numpy as np

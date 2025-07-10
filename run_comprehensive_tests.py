@@ -1,478 +1,449 @@
 #!/usr/bin/env python3
 """
-🧪 Comprehensive Test Suite Runner
-Executes all test suites for the AI Escape Cage Training System.
+Comprehensive Test Suite Runner
 
-This script runs comprehensive tests covering:
-- Core environment functionality
-- Communication systems
-- Analytics utilities  
-- Model management utilities
-- Testing and evaluation utilities
-- Integration tests across components
-
-Usage:
-    python run_comprehensive_tests.py [--verbose] [--coverage] [--specific TEST_NAME]
-
-Examples:
-    python run_comprehensive_tests.py                    # Run all tests
-    python run_comprehensive_tests.py --verbose          # Run with detailed output
-    python run_comprehensive_tests.py --coverage         # Run with coverage analysis
-    python run_comprehensive_tests.py --specific analytics  # Run only analytics tests
+Runs all tests in the project with detailed reporting and error handling.
+Provides summary statistics and failure analysis.
 """
 
-import sys
 import os
+import sys
 import unittest
-import time
-import argparse
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 import importlib.util
+import subprocess
+import time
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+import traceback
 
-# Add project directories to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "ml_training"))
-sys.path.insert(0, str(project_root / "tests"))
+
+class TestResult:
+    """Container for test results with detailed information."""
+    
+    def __init__(self, name: str):
+        self.name = name
+        self.passed = False
+        self.duration = 0.0
+        self.error_message = ""
+        self.test_count = 0
+        self.failure_count = 0
+        self.details = {}
 
 
 class ComprehensiveTestRunner:
     """
-    Comprehensive test runner for the entire AI training system.
+    Comprehensive test runner for the AI Escape Cage project.
     
     Features:
-    - Automatic test discovery across multiple modules
-    - Detailed reporting with timing and success metrics
-    - Optional code coverage analysis
-    - Selective test execution
-    - Integration test coordination
+    - Automatic test discovery
+    - Detailed error reporting
+    - Summary statistics
+    - Fallback testing methods
+    - Module availability checking
     """
     
-    def __init__(self, verbose: bool = False, coverage: bool = False):
+    def __init__(self, verbose: bool = False):
         """
-        Initialize the comprehensive test runner.
+        Initialize the test runner.
         
         Args:
-            verbose: Enable detailed test output
-            coverage: Enable code coverage analysis
+            verbose: Whether to show detailed output
         """
         self.verbose = verbose
-        self.coverage = coverage
-        self.test_results: Dict[str, Any] = {}
-        self.total_start_time = None
+        self.test_results: Dict[str, TestResult] = {}
+        self.project_root = Path(__file__).parent
         
-        # Test suite definitions
+        # Define test suites with their dependencies
         self.test_suites = {
-            'environments': {
-                'description': 'Environment and base functionality tests',
-                'module': 'test_environments',
-                'function': 'run_environment_tests',
-                'required': True
-            },
-            'communication': {
-                'description': 'Unity bridge and communication tests',
-                'module': 'test_communication',
-                'function': 'run_communication_tests',
-                'required': True
-            },
-            'analytics': {
-                'description': 'Analytics utilities and metrics tests',
-                'module': 'test_analytics_utils',
+            'analytics_utils': {
+                'module': 'tests.test_analytics_utils',
                 'function': 'run_analytics_tests',
-                'required': False
+                'description': 'Analytics and performance tracking utilities',
+                'dependencies': ['numpy', 'matplotlib', 'seaborn']
             },
             'model_utils': {
-                'description': 'Model management and utilities tests',
-                'module': 'test_model_utils',
-                'function': 'run_model_utils_tests',
-                'required': False
+                'module': 'tests.test_model_utils',
+                'function': 'run_model_tests', 
+                'description': 'Model management and validation utilities',
+                'dependencies': ['pathlib', 'json']
             },
             'testing_utils': {
-                'description': 'Testing and evaluation utilities tests',
-                'module': 'test_testing_utils',
-                'function': 'run_testing_utils_tests',
-                'required': False
+                'module': 'tests.test_testing_utils',
+                'function': 'run_testing_tests',
+                'description': 'Testing framework and utilities',
+                'dependencies': ['unittest', 'datetime']
+            },
+            'communication': {
+                'module': 'tests.test_communication',
+                'function': 'run_communication_tests',
+                'description': 'Unity-Python communication bridge',
+                'dependencies': ['socket', 'json', 'threading']
+            },
+            'environments': {
+                'module': 'tests.test_environments',
+                'function': 'run_environment_tests',
+                'description': 'Environment classes and functionality',
+                'dependencies': ['unittest', 'tempfile', 'pathlib']
             }
         }
     
-    def discover_test_modules(self) -> List[str]:
+    def check_dependencies(self) -> Dict[str, bool]:
         """
-        Discover available test modules in the tests directory.
+        Check if all required dependencies are available.
         
         Returns:
-            List of discovered test module names
+            Dictionary mapping dependency names to availability status
         """
-        tests_dir = project_root / "tests"
+        dependencies = set()
+        for suite_info in self.test_suites.values():
+            dependencies.update(suite_info.get('dependencies', []))
+        
+        availability = {}
+        for dep in dependencies:
+            try:
+                importlib.import_module(dep)
+                availability[dep] = True
+            except ImportError:
+                availability[dep] = False
+        
+        return availability
+    
+    def discover_tests(self) -> List[str]:
+        """
+        Discover available test files in the tests directory.
+        
+        Returns:
+            List of test file names found
+        """
+        tests_dir = self.project_root / "tests"
+        
         if not tests_dir.exists():
-            print("⚠️ Tests directory not found!")
+            print("Tests directory not found!")
             return []
         
-        discovered = []
-        for test_file in tests_dir.glob("test_*.py"):
-            module_name = test_file.stem
-            if module_name in [suite['module'] for suite in self.test_suites.values()]:
-                discovered.append(module_name)
+        test_files = []
+        for file_path in tests_dir.glob("test_*.py"):
+            if file_path.name != "__init__.py":
+                test_files.append(file_path.stem)
         
-        return discovered
+        return test_files
     
-    def import_test_module(self, module_name: str) -> Optional[object]:
+    def import_test_module(self, module_name: str) -> Optional[Any]:
         """
         Safely import a test module.
         
         Args:
-            module_name: Name of the test module to import
+            module_name: Name of the module to import
             
         Returns:
-            Imported module object or None if import failed
+            Imported module or None if import failed
         """
         try:
-            # Try direct import first
-            return __import__(module_name)
-        except ImportError:
-            try:
-                # Try importing from tests directory
-                spec = importlib.util.spec_from_file_location(
-                    module_name, 
-                    project_root / "tests" / f"{module_name}.py"
-                )
-                if spec and spec.loader:
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    return module
-            except Exception as e:
-                if self.verbose:
-                    print(f"⚠️ Failed to import {module_name}: {e}")
-                return None
+            # Add project root to Python path
+            if str(self.project_root) not in sys.path:
+                sys.path.insert(0, str(self.project_root))
+            
+            module = importlib.import_module(module_name)
+            return module
+        except ImportError as e:
+            if self.verbose:
+                print(f"Failed to import {module_name}: {e}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error importing {module_name}: {e}")
+            return None
     
-    def run_test_suite(self, suite_name: str, suite_info: Dict[str, Any]) -> Dict[str, Any]:
+    def run_test_suite(self, suite_name: str, suite_info: Dict[str, Any]) -> TestResult:
         """
         Run a specific test suite.
         
         Args:
             suite_name: Name of the test suite
-            suite_info: Suite configuration information
+            suite_info: Information about the test suite
             
         Returns:
-            Dictionary containing test results
+            TestResult object with results
         """
-        print(f"\n🧪 Running {suite_name} tests: {suite_info['description']}")
-        print("=" * 70)
-        
+        result = TestResult(suite_name)
         start_time = time.time()
-        result = {
-            'suite_name': suite_name,
-            'description': suite_info['description'],
-            'success': False,
-            'duration': 0.0,
-            'tests_run': 0,
-            'failures': 0,
-            'errors': 0,
-            'skipped': 0,
-            'error_message': None
-        }
         
         try:
-            # Import test module
+            print(f"\nRunning {suite_name} tests: {suite_info['description']}")
+            
+            # Import the test module
             module = self.import_test_module(suite_info['module'])
-            if module is None:
-                result['error_message'] = f"Failed to import module {suite_info['module']}"
-                print(f"❌ {result['error_message']}")
+            if not module:
+                result.error_message = f"Failed to import module {suite_info['module']}"
                 return result
             
-            # Get test function
-            test_function = getattr(module, suite_info['function'], None)
-            if test_function is None:
-                result['error_message'] = f"Function {suite_info['function']} not found in {suite_info['module']}"
-                print(f"❌ {result['error_message']}")
-                return result
-            
-            # Run tests
-            if self.verbose:
-                print(f"📋 Executing {suite_info['function']}() from {suite_info['module']}")
-            
-            # Capture test output if not verbose
-            if not self.verbose:
-                # Redirect stdout temporarily
-                import io
-                from contextlib import redirect_stdout
+            # Get the test function
+            test_function_name = suite_info.get('function')
+            if test_function_name and hasattr(module, test_function_name):
+                # Run the specific test function
+                test_function = getattr(module, test_function_name)
                 
-                captured_output = io.StringIO()
-                with redirect_stdout(captured_output):
-                    success = test_function()
-            else:
-                success = test_function()
-            
-            result['success'] = success
-            result['duration'] = time.time() - start_time
-            
-            if success:
-                print(f"✅ {suite_name} tests completed successfully in {result['duration']:.2f}s")
-            else:
-                print(f"❌ {suite_name} tests failed in {result['duration']:.2f}s")
+                if self.verbose:
+                    print(f"Calling {test_function_name}() directly...")
                 
-        except Exception as e:
-            result['duration'] = time.time() - start_time
-            result['error_message'] = str(e)
-            print(f"💥 {suite_name} tests crashed: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
+                try:
+                    # Call the function and capture its output
+                    test_result = test_function()
+                    
+                    if isinstance(test_result, bool):
+                        result.passed = test_result
+                    elif isinstance(test_result, dict):
+                        result.passed = test_result.get('success', False)
+                        result.test_count = test_result.get('tests_run', 0)
+                        result.failure_count = test_result.get('failures', 0)
+                        result.details = test_result
+                    else:
+                        result.passed = True  # Function completed without exception
+                        
+                except Exception as e:
+                    result.error_message = str(e)
+                    if self.verbose:
+                        result.error_message += f"\n{traceback.format_exc()}"
+                
+            else:
+                # Use unittest discovery as fallback
+                if self.verbose:
+                    print(f"Function {test_function_name} not found, using unittest discovery...")
+                
+                result = self._run_unittest_discovery(suite_name, suite_info['module'])
         
+        except Exception as e:
+            result.error_message = f"Unexpected error: {str(e)}"
+            if self.verbose:
+                result.error_message += f"\n{traceback.format_exc()}"
+        
+        result.duration = time.time() - start_time
         return result
     
-    def run_unit_tests_fallback(self, module_name: str) -> Dict[str, Any]:
+    def _run_unittest_discovery(self, suite_name: str, module_name: str) -> TestResult:
         """
-        Fallback method to run unit tests using unittest discovery.
+        Run tests using unittest discovery as a fallback method.
         
         Args:
-            module_name: Name of the test module
+            suite_name: Name of the test suite
+            module_name: Name of the module
             
         Returns:
-            Dictionary containing test results
+            TestResult object with results
         """
-        print(f"\n🔄 Fallback: Running {module_name} with unittest discovery")
-        
-        start_time = time.time()
-        result = {
-            'suite_name': module_name,
-            'description': f'Unit tests for {module_name}',
-            'success': False,
-            'duration': 0.0,
-            'tests_run': 0,
-            'failures': 0,
-            'errors': 0,
-            'skipped': 0,
-            'error_message': None
-        }
+        result = TestResult(suite_name)
         
         try:
-            # Use unittest to discover and run tests
+            print(f"Fallback: Running {module_name} with unittest discovery")
+            
+            # Import the module to make sure it exists
+            module = self.import_test_module(module_name)
+            if not module:
+                result.error_message = f"Module {module_name} not available"
+                return result
+            
+            # Create a test loader
             loader = unittest.TestLoader()
-            test_dir = str(project_root / "tests")
             
-            # Discover tests
-            test_suite = loader.discover(test_dir, pattern=f"{module_name}.py")
-            
-            # Run tests
-            if self.verbose:
-                runner = unittest.TextTestRunner(verbosity=2)
-            else:
-                runner = unittest.TextTestRunner(stream=open(os.devnull, 'w'))
-            
-            test_result = runner.run(test_suite)
-            
-            # Extract results
-            result['tests_run'] = test_result.testsRun
-            result['failures'] = len(test_result.failures)
-            result['errors'] = len(test_result.errors)
-            result['skipped'] = len(test_result.skipped)
-            result['success'] = test_result.wasSuccessful()
-            result['duration'] = time.time() - start_time
-            
+            # Load tests from the module
+            try:
+                suite = loader.loadTestsFromModule(module)
+                
+                # Run the tests
+                runner = unittest.TextTestRunner(
+                    verbosity=2 if self.verbose else 1,
+                    stream=sys.stdout,
+                    buffer=True
+                )
+                
+                test_result = runner.run(suite)
+                
+                # Process results
+                result.passed = test_result.wasSuccessful()
+                result.test_count = test_result.testsRun
+                result.failure_count = len(test_result.failures) + len(test_result.errors)
+                
+                if not result.passed:
+                    error_details = []
+                    for failure in test_result.failures:
+                        error_details.append(f"FAIL: {failure[0]}\n{failure[1]}")
+                    for error in test_result.errors:
+                        error_details.append(f"ERROR: {error[0]}\n{error[1]}")
+                    result.error_message = "\n".join(error_details)
+                
+            except Exception as e:
+                result.error_message = f"Error running unittest discovery: {str(e)}"
+                
         except Exception as e:
-            result['duration'] = time.time() - start_time
-            result['error_message'] = str(e)
+            result.error_message = f"Error in fallback testing: {str(e)}"
         
         return result
     
-    def run_all_tests(self, specific_test: Optional[str] = None) -> bool:
+    def run_all_tests(self, specific_test: Optional[str] = None) -> Dict[str, TestResult]:
         """
-        Run all test suites or a specific test suite.
+        Run all available tests or a specific test.
         
         Args:
-            specific_test: Name of specific test suite to run (optional)
+            specific_test: Name of specific test to run, or None for all tests
             
         Returns:
-            True if all tests passed, False otherwise
+            Dictionary mapping test names to their results
         """
-        self.total_start_time = time.time()
+        print("AI Escape Cage Training System - Comprehensive Test Suite")
+        print("=" * 60)
         
-        print("🚀 AI Escape Cage Training System - Comprehensive Test Suite")
-        print("=" * 70)
-        print(f"📅 Started at: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"📍 Project root: {project_root}")
-        print(f"🔧 Python version: {sys.version}")
+        # Display system information
+        print(f"Python version: {sys.version}")
+        print(f"Project root: {self.project_root}")
         
-        if self.coverage:
-            print("📊 Code coverage analysis: ENABLED")
-        
-        # Discover available test modules
-        discovered_modules = self.discover_test_modules()
-        print(f"🔍 Discovered test modules: {', '.join(discovered_modules)}")
+        # Check dependencies
+        deps = self.check_dependencies()
+        missing_deps = [dep for dep, available in deps.items() if not available]
+        if missing_deps:
+            print(f"Missing dependencies: {', '.join(missing_deps)}")
         
         # Determine which tests to run
         if specific_test:
             if specific_test in self.test_suites:
+                print(f"Running specific test suite: {specific_test}")
                 tests_to_run = {specific_test: self.test_suites[specific_test]}
-                print(f"🎯 Running specific test suite: {specific_test}")
             else:
-                print(f"❌ Test suite '{specific_test}' not found!")
+                print(f"Test suite '{specific_test}' not found!")
                 print(f"Available test suites: {', '.join(self.test_suites.keys())}")
-                return False
+                return {}
         else:
+            print(f"Running all {len(self.test_suites)} test suites")
             tests_to_run = self.test_suites
-            print(f"🧪 Running all {len(tests_to_run)} test suites")
         
-        # Run test suites
-        all_passed = True
-        total_tests = 0
-        total_failures = 0
-        total_errors = 0
-        
+        # Run each test suite
         for suite_name, suite_info in tests_to_run.items():
-            # Check if module is available
-            if suite_info['module'] not in discovered_modules:
-                if suite_info.get('required', False):
-                    print(f"\n⚠️ Required test module {suite_info['module']} not found!")
-                    all_passed = False
-                else:
-                    print(f"\n⏩ Skipping optional test module {suite_info['module']} (not found)")
-                continue
-            
-            # Run the test suite
-            suite_result = self.run_test_suite(suite_name, suite_info)
-            self.test_results[suite_name] = suite_result
-            
-            # Update totals
-            total_tests += suite_result.get('tests_run', 0)
-            total_failures += suite_result.get('failures', 0)
-            total_errors += suite_result.get('errors', 0)
-            
-            # Track overall success
-            if not suite_result['success']:
-                all_passed = False
+            try:
+                # Check if required modules are available
+                module = self.import_test_module(suite_info['module'])
+                if not module:
+                    print(f"\nRequired test module {suite_info['module']} not found!")
+                    result = TestResult(suite_name)
+                    result.error_message = f"Module {suite_info['module']} not available"
+                    self.test_results[suite_name] = result
+                    continue
                 
-                # Try fallback method for failed suites
-                if suite_result.get('error_message'):
-                    print(f"🔄 Attempting fallback test method for {suite_name}...")
-                    fallback_result = self.run_unit_tests_fallback(suite_info['module'])
-                    if fallback_result['success']:
-                        print(f"✅ Fallback successful for {suite_name}")
-                        self.test_results[f"{suite_name}_fallback"] = fallback_result
-                        all_passed = True  # Reset if fallback succeeded
+                # Run the test suite
+                result = self.run_test_suite(suite_name, suite_info)
+                self.test_results[suite_name] = result
+                
+                # Display immediate results
+                if result.passed:
+                    print(f"PASSED: {suite_name} tests completed successfully in {result.duration:.2f}s")
+                else:
+                    print(f"FAILED: {suite_name} tests failed in {result.duration:.2f}s")
+                    if result.error_message and self.verbose:
+                        print(f"Error details: {result.error_message}")
+                
+            except Exception as e:
+                print(f"Error running {suite_name}: {str(e)}")
+                result = TestResult(suite_name)
+                result.error_message = f"Unexpected error: {str(e)}"
+                self.test_results[suite_name] = result
+                
+                # Try fallback method
+                print(f"Attempting fallback test method for {suite_name}...")
+                fallback_result = self._run_unittest_discovery(suite_name, suite_info['module'])
+                if fallback_result.passed:
+                    print(f"Fallback successful for {suite_name}")
+                    self.test_results[suite_name] = fallback_result
         
-        # Generate final report
-        self.generate_final_report(all_passed, total_tests, total_failures, total_errors)
-        
-        return all_passed
+        return self.test_results
     
-    def generate_final_report(self, all_passed: bool, total_tests: int, 
-                            total_failures: int, total_errors: int) -> None:
-        """
-        Generate comprehensive final test report.
+    def print_summary(self):
+        """Print a comprehensive summary of test results."""
+        if not self.test_results:
+            print("\nNo tests were run.")
+            return
         
-        Args:
-            all_passed: Whether all tests passed
-            total_tests: Total number of tests run
-            total_failures: Total number of test failures
-            total_errors: Total number of test errors
-        """
-        total_duration = time.time() - self.total_start_time
+        print("\n" + "=" * 60)
+        print("TEST SUMMARY")
+        print("=" * 60)
         
-        print("\n" + "=" * 70)
-        print("📊 COMPREHENSIVE TEST REPORT")
-        print("=" * 70)
+        total_tests = len(self.test_results)
+        passed_tests = sum(1 for result in self.test_results.values() if result.passed)
+        failed_tests = total_tests - passed_tests
         
-        # Overall status
-        if all_passed:
-            print("🎉 OVERALL RESULT: ALL TESTS PASSED!")
+        total_duration = sum(result.duration for result in self.test_results.values())
+        
+        # Overall result
+        if failed_tests == 0:
+            print("OVERALL RESULT: ALL TESTS PASSED!")
         else:
-            print("❌ OVERALL RESULT: SOME TESTS FAILED!")
+            print("OVERALL RESULT: SOME TESTS FAILED!")
         
-        print(f"\n⏱️ Total execution time: {total_duration:.2f} seconds")
-        print(f"📋 Test suites run: {len(self.test_results)}")
+        print(f"\nTotal execution time: {total_duration:.2f} seconds")
+        print(f"Test suites run: {len(self.test_results)}")
+        print(f"Passed: {passed_tests}")
+        print(f"Failed: {failed_tests}")
+        
+        # Individual test counts
+        total_tests = sum(result.test_count for result in self.test_results.values() if result.test_count > 0)
+        total_failures = sum(result.failure_count for result in self.test_results.values() if result.failure_count > 0)
         
         if total_tests > 0:
-            print(f"🧪 Total individual tests: {total_tests}")
-            print(f"❌ Total failures: {total_failures}")
-            print(f"💥 Total errors: {total_errors}")
-            success_rate = ((total_tests - total_failures - total_errors) / total_tests) * 100
-            print(f"✅ Success rate: {success_rate:.1f}%")
+            print(f"Total individual tests: {total_tests}")
+            print(f"Total failures: {total_failures}")
         
-        # Detailed suite results
-        print(f"\n📋 DETAILED SUITE RESULTS:")
-        print("-" * 70)
-        
+        # Detailed results
+        print(f"\nDETAILED RESULTS:")
         for suite_name, result in self.test_results.items():
-            status_emoji = "✅" if result['success'] else "❌"
-            duration_str = f"{result['duration']:.2f}s"
+            status = "PASS" if result.passed else "FAIL"
+            print(f"  {suite_name:<20} {status:<6} ({result.duration:.2f}s)")
             
-            print(f"{status_emoji} {suite_name:<20} | {duration_str:>8} | {result['description']}")
-            
-            if not result['success'] and result.get('error_message'):
-                print(f"   Error: {result['error_message']}")
+            if not result.passed and result.error_message:
+                # Show first line of error message
+                first_line = result.error_message.split('\n')[0]
+                print(f"    Error: {first_line}")
         
         # Recommendations
-        print(f"\n💡 RECOMMENDATIONS:")
-        print("-" * 70)
-        
-        if all_passed:
-            print("🎯 All tests are passing! Your codebase is in excellent condition.")
-            print("🚀 Consider running tests regularly as part of your development workflow.")
-        else:
-            failed_suites = [name for name, result in self.test_results.items() if not result['success']]
-            print(f"🔧 Fix failing test suites: {', '.join(failed_suites)}")
-            print("📚 Review error messages and update code accordingly.")
-            print("🧪 Run individual test suites to isolate and debug issues.")
-        
-        if self.coverage:
-            print("📊 Generate detailed coverage report for comprehensive analysis.")
-        
-        print("\n🔗 For detailed debugging, run individual test suites with --verbose flag.")
+        if failed_tests > 0:
+            print(f"\nRECOMMENDATIONS:")
+            print("- Check the error details above for specific failures")
+            print("- Ensure all dependencies are properly installed")
+            print("- Verify that Unity is not running during environment tests")
+            print("- Try running tests individually for more detailed output")
 
 
 def main():
-    """Main entry point for the comprehensive test runner."""
-    parser = argparse.ArgumentParser(
-        description="Run comprehensive tests for AI Escape Cage Training System",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python run_comprehensive_tests.py                    # Run all tests
-  python run_comprehensive_tests.py --verbose          # Run with detailed output  
-  python run_comprehensive_tests.py --coverage         # Run with coverage analysis
-  python run_comprehensive_tests.py --specific analytics  # Run only analytics tests
-        """
-    )
+    """Main function for running comprehensive tests."""
+    import argparse
     
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose output with detailed test information'
-    )
-    
-    parser.add_argument(
-        '--coverage', '-c',
-        action='store_true',
-        help='Enable code coverage analysis (requires coverage.py)'
-    )
-    
-    parser.add_argument(
-        '--specific', '-s',
-        type=str,
-        help='Run only a specific test suite (environments, communication, analytics, model_utils, testing_utils)'
-    )
+    parser = argparse.ArgumentParser(description="Comprehensive Test Suite Runner")
+    parser.add_argument("--verbose", "-v", action="store_true", 
+                       help="Show detailed output")
+    parser.add_argument("--test", "-t", type=str, 
+                       help="Run specific test suite")
+    parser.add_argument("--list", "-l", action="store_true",
+                       help="List available test suites")
     
     args = parser.parse_args()
     
-    # Create and run test runner
-    runner = ComprehensiveTestRunner(verbose=args.verbose, coverage=args.coverage)
+    runner = ComprehensiveTestRunner(verbose=args.verbose)
     
+    if args.list:
+        print("Available test suites:")
+        for name, info in runner.test_suites.items():
+            print(f"  {name:<20} - {info['description']}")
+        return
+    
+    # Run tests
     try:
-        success = runner.run_all_tests(specific_test=args.specific)
+        results = runner.run_all_tests(specific_test=args.test)
+        runner.print_summary()
         
         # Exit with appropriate code
-        sys.exit(0 if success else 1)
+        failed_count = sum(1 for result in results.values() if not result.passed)
+        sys.exit(0 if failed_count == 0 else 1)
         
     except KeyboardInterrupt:
-        print("\n🛑 Tests interrupted by user")
-        sys.exit(130)
+        print("\nTest execution interrupted by user.")
+        sys.exit(1)
     except Exception as e:
-        print(f"\n💥 Test runner crashed: {e}")
-        if args.verbose:
-            import traceback
-            traceback.print_exc()
+        print(f"Error running tests: {e}")
         sys.exit(1)
 
 

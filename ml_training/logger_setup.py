@@ -1,13 +1,8 @@
 """
-📊 Logging Setup Module
-Centralized logging configuration for the ML training pipeline.
+Logging Setup Module
 
-This module provides:
-- Structured logging for training events
-- Performance monitoring
-- Error tracking and debugging
-- Training metrics collection
-- File and console output management
+Comprehensive logging configuration for AI training sessions with file output,
+console formatting, and performance metrics tracking.
 """
 
 import logging
@@ -21,16 +16,7 @@ import json
 
 
 class TrainingLogger:
-    """
-    Centralized logging system for ML training pipeline.
-    
-    Features:
-    - Multiple log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    - File rotation to prevent large log files
-    - Structured logging with JSON format for metrics
-    - Console and file output
-    - Training session tracking
-    """
+    """Enhanced logging system for AI training sessions."""
     
     def __init__(
         self, 
@@ -40,6 +26,7 @@ class TrainingLogger:
         max_file_size: int = 10 * 1024 * 1024,  # 10MB
         backup_count: int = 5
     ):
+        """Initialize training logger with session tracking."""
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(exist_ok=True)
         
@@ -145,9 +132,9 @@ class TrainingLogger:
     def log_session_start(self) -> None:
         """Log the start of a training session."""
         self.logger.info("=" * 60)
-        self.logger.info(f"🚀 Starting training session: {self.session_name}")
-        self.logger.info(f"⏰ Session start time: {self.session_start_time}")
-        self.logger.info(f"📁 Log directory: {self.log_dir}")
+        self.logger.info(f"Starting training session: {self.session_name}")
+        self.logger.info(f"Session start time: {self.session_start_time}")
+        self.logger.info(f"Log directory: {self.log_dir}")
         self.logger.info("=" * 60)
     
     def log_episode(
@@ -196,7 +183,7 @@ class TrainingLogger:
     
     def log_model_save(self, model_name: str, episode: int, performance_metrics: Optional[Dict] = None) -> None:
         """Log model saving event."""
-        self.logger.info(f"💾 Model saved: {model_name} (Episode {episode})")
+        self.logger.info(f"Model saved: {model_name} (Episode {episode})")
         
         save_data = {
             'timestamp': datetime.datetime.now().isoformat(),
@@ -207,18 +194,18 @@ class TrainingLogger:
         
         self.training_metrics['model_saves'].append(save_data)
     
-    def log_error(self, error_msg: str, error_type: str = "GENERAL", exception: Optional[Exception] = None) -> None:
-        """Log error with context."""
+    def log_error(self, error_type: str, error_msg: str, context: Dict[str, Any] = None) -> None:
+        """Log errors with context information."""
         error_data = {
             'timestamp': datetime.datetime.now().isoformat(),
             'error_type': error_type,
             'message': error_msg,
-            'exception': str(exception) if exception else None
+            'exception': str(context['exception']) if 'exception' in context else None
         }
         
-        self.logger.error(f"❌ {error_type}: {error_msg}")
-        if exception:
-            self.logger.error(f"Exception details: {exception}")
+        self.logger.error(f"{error_type}: {error_msg}")
+        if 'exception' in context:
+            self.logger.error(f"Exception details: {context['exception']}")
         
         self.training_metrics['errors'].append(error_data)
     
@@ -266,13 +253,16 @@ class TrainingLogger:
         with open(summary_file, 'w', encoding='utf-8') as f:
             json.dump(self.training_metrics, f, indent=2, ensure_ascii=False)
         
-        self.logger.info(f"📊 Session summary saved: {summary_file}")
+        self.logger.info(f"Session summary saved: {summary_file}")
     
     def close(self) -> None:
-        """Close logger and save final summary."""
+        """End training session and save summary."""
+        if not hasattr(self, 'session_start_time'):
+            return
+            
         self.logger.info("=" * 60)
-        self.logger.info(f"🏁 Training session ended: {self.session_name}")
-        self.logger.info(f"⏱️ Total duration: {datetime.datetime.now() - self.session_start_time}")
+        self.logger.info(f"Training session ended: {self.session_name}")
+        self.logger.info(f"Total duration: {datetime.datetime.now() - self.session_start_time}")
         self.logger.info("=" * 60)
         
         self.save_session_summary()

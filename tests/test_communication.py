@@ -1,12 +1,7 @@
 """
-🧪 Communication Tests
-Unit tests for Unity-Python communication bridge.
+Communication Tests
 
-Test coverage:
-- Socket connection establishment
-- Data sending and receiving
-- Error handling and recovery
-- Performance benchmarks
+Test suite for Unity-Python communication bridge functionality.
 """
 
 import unittest
