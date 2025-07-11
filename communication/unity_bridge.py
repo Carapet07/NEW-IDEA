@@ -7,7 +7,7 @@ import socket
 import json
 import threading
 import numpy as np
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Callable
 import time
 import logging
 from contextlib import contextmanager
@@ -26,7 +26,9 @@ class UnityBridge:
     """
     
     def __init__(self, host: str = 'localhost', port: int = 9999, 
-                 max_retries: int = 3, retry_delay: float = 1.0):
+                 max_retries: int = 3, retry_delay: float = 1.0,
+                 buffer_size: int = 4096, socket_timeout: float = 5.0,
+                 idle_timeout: float = 300.0, max_failed_communications: int = 5):
         """
         Initialize the Unity bridge with enhanced configuration.
         
@@ -35,11 +37,19 @@ class UnityBridge:
             port: Port number for socket communication
             max_retries: Maximum number of retry attempts for operations
             retry_delay: Delay between retry attempts in seconds
+            buffer_size: Buffer size for socket receive operations
+            socket_timeout: Timeout for socket operations in seconds
+            idle_timeout: Maximum idle time before connection warning in seconds
+            max_failed_communications: Maximum failed communications before marking as disconnected
         """
         self.host: str = host
         self.port: int = port
         self.max_retries: int = max_retries
         self.retry_delay: float = retry_delay
+        self.buffer_size: int = buffer_size
+        self.socket_timeout: float = socket_timeout
+        self.idle_timeout: float = idle_timeout
+        self.max_failed_communications: int = max_failed_communications
         
         # Connection state
         self.socket: Optional[socket.socket] = None
@@ -119,7 +129,7 @@ class UnityBridge:
             self.client_socket, addr = self.socket.accept()
             
             # Configure client socket
-            self.client_socket.settimeout(5.0)  # 5 second timeout for operations
+            self.client_socket.settimeout(self.socket_timeout)
             self.client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             
             self.is_connected = True
@@ -158,6 +168,70 @@ class UnityBridge:
             self.logger.warning(f"Connection test failed: {e}")
             return False
     
+    def _retry_operation(self, operation_func: Callable, operation_name: str, 
+                        short_delay: bool = False, *args, **kwargs) -> Any:
+        """
+        Generic retry wrapper for socket operations with consistent error handling.
+        
+        Args:
+            operation_func: Function to execute with retry logic
+            operation_name: Name of the operation for logging
+            short_delay: Whether to use shorter delay between retries
+            *args, **kwargs: Arguments to pass to the operation function
+            
+        Returns:
+            Result of the operation function, or None if all retries failed
+        """
+        if not self._check_connection():
+            return None
+        
+        delay = self.retry_delay * (0.5 if short_delay else 1.0)
+        
+        for attempt in range(self.max_retries):
+            try:
+                result = operation_func(*args, **kwargs)
+                
+                # Update success tracking
+                self.last_successful_communication = time.time()
+                if self.failed_communications > 0:
+                    self.failed_communications = 0
+                    self.logger.info("Communication restored")
+                
+                return result
+                
+            except socket.timeout:
+                if operation_name == "receive_observation" and attempt == 0:
+                    # Timeout is common during normal operation, don't spam logs
+                    self.logger.debug(f"Timeout {operation_name}")
+                else:
+                    self.logger.warning(f"Timeout {operation_name} (attempt {attempt + 1}/{self.max_retries})")
+                
+                if attempt < self.max_retries - 1:
+                    if operation_name != "receive_observation":
+                        time.sleep(delay)
+                    continue
+                    
+            except socket.error as e:
+                self.logger.warning(f"Socket error {operation_name}: {e} (attempt {attempt + 1}/{self.max_retries})")
+                if attempt < self.max_retries - 1:
+                    if self._try_reconnect():
+                        continue
+                    time.sleep(delay)
+                    
+            except Exception as e:
+                self.logger.error(f"Unexpected error {operation_name}: {e}")
+                break
+        
+        # All attempts failed
+        self.logger.error(f"Failed to {operation_name} after {self.max_retries} attempts")
+        self.failed_communications += 1
+        
+        if self.failed_communications >= self.max_failed_communications:
+            self.logger.error("Too many communication failures. Marking as disconnected.")
+            self.is_connected = False
+        
+        return None
+    
     def send_action(self, action: int) -> bool:
         """
         Send action to Unity with retry mechanism and error handling.
@@ -168,52 +242,21 @@ class UnityBridge:
         Returns:
             True if action sent successfully, False otherwise
         """
-        if not self._check_connection():
-            return False
+        def _send_action_impl():
+            # Validate action
+            if not isinstance(action, int) or action < 0 or action > 3:
+                self.logger.warning(f"Invalid action: {action}. Using 0 instead.")
+                validated_action = 0
+            else:
+                validated_action = action
+            
+            # Send action with newline delimiter
+            message = f"{validated_action}\n"
+            self.client_socket.send(message.encode('utf-8'))
+            return True
         
-        for attempt in range(self.max_retries):
-            try:
-                # Validate action
-                if not isinstance(action, int) or action < 0 or action > 3:
-                    self.logger.warning(f"Invalid action: {action}. Using 0 instead.")
-                    action = 0
-                
-                # Send action with newline delimiter
-                message = f"{action}\n"
-                self.client_socket.send(message.encode('utf-8'))
-                
-                # Update success tracking
-                self.last_successful_communication = time.time()
-                if self.failed_communications > 0:
-                    self.failed_communications = 0
-                    self.logger.info("Communication restored")
-                
-                return True
-                
-            except socket.timeout:
-                self.logger.warning(f"Timeout sending action (attempt {attempt + 1}/{self.max_retries})")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                    continue
-            except socket.error as e:
-                self.logger.warning(f"Socket error sending action: {e} (attempt {attempt + 1}/{self.max_retries})")
-                if attempt < self.max_retries - 1:
-                    if self._try_reconnect():
-                        continue
-                    time.sleep(self.retry_delay)
-            except Exception as e:
-                self.logger.error(f"Unexpected error sending action: {e}")
-                break
-        
-        # All attempts failed
-        self.logger.error(f"Failed to send action after {self.max_retries} attempts")
-        self.failed_communications += 1
-        
-        if self.failed_communications >= 5:
-            self.logger.error("Too many communication failures. Marking as disconnected.")
-            self.is_connected = False
-        
-        return False
+        result = self._retry_operation(_send_action_impl, "send action")
+        return result is not None
     
     def receive_observation(self) -> Dict[str, Any]:
         """
@@ -222,51 +265,26 @@ class UnityBridge:
         Returns:
             Dictionary containing observation data, empty dict if failed
         """
-        if not self._check_connection():
-            return {}
+        def _receive_observation_impl():
+            # Receive data with timeout
+            data = self.client_socket.recv(self.buffer_size).decode('utf-8')
+            
+            if not data:
+                self.logger.warning("Received empty data from Unity")
+                self.is_connected = False
+                return {}
+            
+            # Parse observation data
+            observation = self._parse_observation_data(data)
+            
+            if observation:
+                return observation
+            else:
+                self.logger.warning(f"Failed to parse observation data: {data[:100]}...")
+                return {}
         
-        for attempt in range(self.max_retries):
-            try:
-                # Receive data with timeout
-                data = self.client_socket.recv(4096).decode('utf-8')
-                
-                if not data:
-                    self.logger.warning("Received empty data from Unity")
-                    self.is_connected = False
-                    return {}
-                
-                # Parse observation data
-                observation = self._parse_observation_data(data)
-                
-                if observation:
-                    # Update success tracking
-                    self.last_successful_communication = time.time()
-                    if self.failed_communications > 0:
-                        self.failed_communications = 0
-                        self.logger.info("Communication restored")
-                    return observation
-                else:
-                    self.logger.warning(f"Failed to parse observation data: {data[:100]}...")
-                    
-            except socket.timeout:
-                # Timeout is common during normal operation, don't spam logs
-                if attempt == 0:  # Only log on first timeout
-                    self.logger.debug("Timeout receiving observation")
-                if attempt < self.max_retries - 1:
-                    continue
-            except socket.error as e:
-                self.logger.warning(f"Socket error receiving observation: {e} (attempt {attempt + 1}/{self.max_retries})")
-                if attempt < self.max_retries - 1:
-                    if self._try_reconnect():
-                        continue
-                    time.sleep(self.retry_delay * 0.5)  # Shorter delay for observations
-            except Exception as e:
-                self.logger.error(f"Unexpected error receiving observation: {e}")
-                break
-        
-        # All attempts failed
-        self.failed_communications += 1
-        return {}
+        result = self._retry_operation(_receive_observation_impl, "receive observation", short_delay=True)
+        return result if result is not None else {}
     
     def _parse_observation_data(self, data: str) -> Dict[str, Any]:
         """
@@ -326,34 +344,13 @@ class UnityBridge:
         Returns:
             True if reset command sent successfully, False otherwise
         """
-        if not self._check_connection():
-            return False
+        def _reset_environment_impl():
+            message = 'reset\n'
+            self.client_socket.send(message.encode('utf-8'))
+            return True
         
-        for attempt in range(self.max_retries):
-            try:
-                message = 'reset\n'
-                self.client_socket.send(message.encode('utf-8'))
-                
-                # Update success tracking
-                self.last_successful_communication = time.time()
-                return True
-                
-            except socket.timeout:
-                self.logger.warning(f"Timeout sending reset (attempt {attempt + 1}/{self.max_retries})")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-            except socket.error as e:
-                self.logger.warning(f"Socket error sending reset: {e}")
-                if attempt < self.max_retries - 1:
-                    if self._try_reconnect():
-                        continue
-                    time.sleep(self.retry_delay)
-            except Exception as e:
-                self.logger.error(f"Unexpected error sending reset: {e}")
-                break
-        
-        self.logger.error(f"Failed to send reset after {self.max_retries} attempts")
-        return False
+        result = self._retry_operation(_reset_environment_impl, "send reset")
+        return result is not None
     
     def _check_connection(self) -> bool:
         """Check if the connection is still valid."""
@@ -364,8 +361,9 @@ class UnityBridge:
         # Check if connection has been idle for too long
         if self.last_successful_communication:
             idle_time = time.time() - self.last_successful_communication
-            if idle_time > 300:  # 5 minutes of inactivity
-                self.logger.warning(f"Connection has been idle for {idle_time:.1f} seconds")
+            if idle_time > self.idle_timeout:
+                self.logger.warning(f"Connection has been idle for {idle_time:.1f} seconds. "
+                                   f"Max idle time: {self.idle_timeout:.1f} seconds")
         
         return True
     
@@ -388,7 +386,7 @@ class UnityBridge:
             try:
                 self.socket.settimeout(5.0)  # Short timeout for reconnection
                 self.client_socket, addr = self.socket.accept()
-                self.client_socket.settimeout(5.0)
+                self.client_socket.settimeout(self.socket_timeout)
                 self.is_connected = True
                 self.logger.info(f"Reconnected to Unity from {addr}")
                 return True

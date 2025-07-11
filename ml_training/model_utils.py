@@ -22,6 +22,59 @@ import numpy as np
 import logging
 
 
+def find_model_file(model_name: str, models_dir: str = "models") -> Optional[Path]:
+    """
+    Find a model file by searching in common locations.
+    
+    Args:
+        model_name: Name of the model to find
+        models_dir: Directory to search for models
+        
+    Returns:
+        Path to the model file if found, None otherwise
+    """
+    models_path = Path(models_dir)
+    
+    search_paths = [
+        models_path / f"{model_name}.zip",
+        models_path / model_name,
+        Path(f"{model_name}.zip"),
+        Path(model_name),
+        Path(".") / f"{model_name}.zip",
+        Path(".") / model_name
+    ]
+    
+    for path in search_paths:
+        if path.exists():
+            return path
+    return None
+
+
+def list_available_models(models_dir: str = "models") -> List[str]:
+    """
+    List all available saved models.
+    
+    Args:
+        models_dir: Directory to search for models
+        
+    Returns:
+        List of available model names
+    """
+    models = []
+    models_path = Path(models_dir)
+    
+    # Check current directory
+    for file in Path(".").glob("*.zip"):
+        models.append(file.stem)
+    
+    # Check models directory
+    if models_path.exists():
+        for file in models_path.glob("*.zip"):
+            models.append(file.stem)
+    
+    return sorted(set(models))
+
+
 class ModelMetadata:
     """
     Class to manage model metadata and information.
@@ -982,138 +1035,42 @@ def safe_load_model(model_path: Union[str, Path],
         return None
 
 
-def interactive_mode(manager: ModelManager) -> None:
-    """Interactive mode for model management."""
-    print("AI Model Manager - Interactive Mode")
-    print("=" * 40)
-    print("1. List models")
-    print("2. Organize models")
-    print("3. Backup model")
-    print("4. Delete model")
-    print("5. Add metadata")
-    print("6. Compare models")
-    print("7. Cleanup old models")
-    print("8. Exit")
-    
-    while True:
-        try:
-            choice = input("\nSelect option (1-8): ").strip()
-            
-            if choice == "1":
-                detailed = input("Show detailed info? (y/N): ").strip().lower() == 'y'
-                sort_by = input("Sort by (name/size/date/performance) [name]: ").strip() or "name"
-                manager.list_models(detailed=detailed, sort_by=sort_by)
-            
-            elif choice == "2":
-                manager.organize_models()
-            
-            elif choice == "3":
-                model_name = input("Model name to backup: ").strip()
-                if model_name:
-                    manager.backup_model(model_name)
-            
-            elif choice == "4":
-                model_name = input("Model name to delete: ").strip()
-                if model_name:
-                    manager.delete_model(model_name)
-            
-            elif choice == "5":
-                model_name = input("Model name: ").strip()
-                if model_name:
-                    success_rate = input("Success rate (%): ").strip()
-                    total_steps = input("Training steps: ").strip()
-                    notes = input("Notes: ").strip()
-                    
-                    metadata = {}
-                    if success_rate:
-                        try:
-                            metadata['success_rate'] = float(success_rate)
-                        except ValueError:
-                            pass
-                    if total_steps:
-                        try:
-                            metadata['total_steps'] = int(total_steps)
-                        except ValueError:
-                            pass
-                    if notes:
-                        metadata['notes'] = notes
-                    
-                    manager.add_model_metadata(model_name, **metadata)
-            
-            elif choice == "6":
-                model1 = input("First model name: ").strip()
-                model2 = input("Second model name: ").strip()
-                if model1 and model2:
-                    manager.compare_two_models(model1, model2)
-            
-            elif choice == "7":
-                days = input("Keep models newer than how many days? [30]: ").strip()
-                try:
-                    days = int(days) if days else 30
-                except ValueError:
-                    days = 30
-                
-                dry_run = input("Dry run (preview only)? (Y/n): ").strip().lower() != 'n'
-                manager.cleanup_old_models(keep_days=days, dry_run=dry_run)
-            
-            elif choice == "8":
-                break
-            
-            else:
-                print("Invalid choice. Please select 1-8.")
-        
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            break
-
-
 def main():
-    """Main function for command-line interface."""
-    parser = argparse.ArgumentParser(description="AI Model Manager - Comprehensive Model Management")
-    parser.add_argument("action", choices=["list", "organize", "backup", "delete", "compare", "cleanup", "interactive"],
+    """Main function for simplified command-line interface."""
+    parser = argparse.ArgumentParser(description="AI Model Manager - Simple Model Management")
+    parser.add_argument("action", choices=["list", "backup", "delete", "compare"],
                         help="Action to perform")
     parser.add_argument("--model", help="Model name for single-model operations")
     parser.add_argument("--model2", help="Second model name for comparisons")
-    parser.add_argument("--detailed", action="store_true", help="Show detailed information")
-    parser.add_argument("--sort", choices=["name", "size", "date", "performance"], default="name",
-                        help="Sort criteria for listing")
-    parser.add_argument("--days", type=int, default=30, help="Days to keep for cleanup")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be deleted (cleanup only)")
-    parser.add_argument("--force", action="store_true", help="Skip confirmations (use with caution)")
     
     args = parser.parse_args()
     manager = ModelManager()
     
     try:
         if args.action == "list":
-            manager.list_models(detailed=args.detailed, sort_by=args.sort)
-        
-        elif args.action == "organize":
-            manager.organize_models()
+            # Always use simple non-detailed listing, sorted by name
+            manager.list_models(detailed=False, sort_by="name")
         
         elif args.action == "backup":
             if not args.model:
                 print("--model required for backup")
+                print("Example: python ml_training/model_utils.py backup --model my_model")
                 return
             manager.backup_model(args.model)
         
         elif args.action == "delete":
             if not args.model:
                 print("--model required for delete")
+                print("Example: python ml_training/model_utils.py delete --model my_model")
                 return
-            manager.delete_model(args.model, force=args.force)
+            manager.delete_model(args.model, force=False)
         
         elif args.action == "compare":
             if not args.model or not args.model2:
                 print("--model and --model2 required for compare")
+                print("Example: python ml_training/model_utils.py compare --model model1 --model2 model2")
                 return
             manager.compare_two_models(args.model, args.model2)
-        
-        elif args.action == "cleanup":
-            manager.cleanup_old_models(keep_days=args.days, dry_run=args.dry_run)
-        
-        elif args.action == "interactive":
-            interactive_mode(manager)
     
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")

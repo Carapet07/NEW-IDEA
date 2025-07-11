@@ -1,0 +1,11 @@
+{
+  "test_model": {
+    "backups": [
+      {
+        "timestamp": "20250711_214820",
+        "path": "model_backups/test_model_backup_20250711_214820.zip",
+        "size_mb": 1.52587890625e-05
+      }
+    ]
+  }
+}

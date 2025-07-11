@@ -14,9 +14,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Tuple, Optional, List
 
-# Add communication folder to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'communication'))
-from unity_bridge import UnityBridge
+# Import Unity bridge from communication module
+from communication.unity_bridge import UnityBridge
 
 
 class BaseEscapeCageEnv(gym.Env, ABC):
