@@ -1,6 +1,6 @@
 # AI Escape Cage Training System
 
-Train AI agents to escape virtual cages using reinforcement learning. **Mix and match any trainer with any environment** for maximum flexibility!
+Train AI agents to escape virtual cages(mazes) using reinforcement learning. **Mix and match any trainer with any environment** for maximum flexibility!
 
 ## 🚀 Quick Start for New Users
 
