@@ -190,10 +190,8 @@ python ml_training/escape_cage_trainer.py --trainer continue --model existing_mo
 ### **Model Management Commands**
 
 ```bash
-# List all models with details (size, date, success rate)
-python ml_training/model_utils.py list
-
 # Model operations
+python ml_training/model_utils.py list
 python ml_training/model_utils.py backup --model my_model # Backup specific model
 python ml_training/model_utils.py delete --model my_model # Delete specific model
 python ml_training/model_utils.py compare --model model1 --model2 model2 # Compare two models
